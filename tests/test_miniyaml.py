@@ -48,6 +48,13 @@ class TestMiniYaml(unittest.TestCase):
                          "and state.nearest_enemy.dist <= 800")
         self.assertEqual(doc["t"]["do"], "goto kill_baba")
 
+    def test_continuation_after_non_string_rejected(self):
+        # Folding only extends STRING scalars; a stray deeper line after an
+        # int must error with a line number, never guess (docs/08).
+        with self.assertRaises(MiniYamlError) as ctx:
+            miniyaml.load("a:\n  key: 30\n    stray continuation\n")
+        self.assertEqual(ctx.exception.lineno, 3)
+
     def test_continuation_does_not_eat_nested_blocks(self):
         doc = miniyaml.load(
             "a: scalar\n"

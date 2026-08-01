@@ -29,6 +29,13 @@ class TestCompile(unittest.TestCase):
             with self.assertRaises(GuardError):
                 compile_guard(bad, "t")
 
+    def test_underscore_names_reserved(self):
+        # The membership rewrite injects _cmp_chain; guard source must not
+        # be able to name (and thus shadow) anything in that namespace.
+        for bad in ("_cmp_chain == 1", "_x == 1"):
+            with self.assertRaises(GuardError, msg=bad):
+                compile_guard(bad, "t")
+
 
 class TestEval(unittest.TestCase):
     def test_event_fields(self):
@@ -55,11 +62,34 @@ class TestEval(unittest.TestCase):
         for src in ("state.nearest_enemy.dist <= 800",
                     "state.nearest_enemy.kind == 'deku_baba'",
                     "state.nearest_enemy.kind != 'deku_baba'",
-                    "state.nearest_enemy.dist + 100 <= 900"):
+                    "state.nearest_enemy.dist + 100 <= 900",
+                    "100 <= state.nearest_enemy.dist <= 800",
+                    "state.nearest_enemy.kind in ('deku_baba', 'skulltula')",
+                    # `not in` is the trap: the container's reflected ==
+                    # yields False, which native `not in` negates to True —
+                    # the rewrite keeps the contract's "never match".
+                    "state.nearest_enemy.kind not in ('deku_baba', 'skulltula')"):
             g = compile_guard(src, "t")
             ok, warn = eval_guard(g, {}, state)
             self.assertFalse(ok, src)
             self.assertIsNone(warn, src)
+
+    def test_membership_still_works_when_present(self):
+        state = {"nearest_enemy": {"kind": "skulltula", "dist": 300.0}}
+        g_in = compile_guard("state.nearest_enemy.kind in ('deku_baba', 'skulltula')", "t")
+        g_notin = compile_guard("state.nearest_enemy.kind not in ('deku_baba',)", "t")
+        self.assertEqual(eval_guard(g_in, {}, state), (True, None))
+        self.assertEqual(eval_guard(g_notin, {}, state), (True, None))
+        state["nearest_enemy"]["kind"] = "deku_baba"
+        self.assertEqual(eval_guard(g_notin, {}, state), (False, None))
+
+    def test_runtime_error_warns_no_fire(self):
+        # A guard must never be able to kill the 20 Hz loop: whatever it
+        # raises, it did not fire and the caller journals why.
+        g = compile_guard("state.rupees % state.sticks == 0", "t")
+        ok, warn = eval_guard(g, {}, {"rupees": 10, "sticks": 0})
+        self.assertFalse(ok)
+        self.assertIn("ZeroDivisionError", warn)
 
     def test_absent_truthiness_composes(self):
         g = compile_guard("not state.nearest_enemy and state.hearts >= 1", "t")

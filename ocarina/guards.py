@@ -20,15 +20,29 @@ Absence semantics (this module's one design decision, ratified into
 MACHINE.md 2026-08-01): a `state.*` path whose entity is legitimately
 absent at runtime — `state.nearest_enemy.dist` with no enemy in view —
 resolves to the ABSENT sentinel, which is falsy and compares False in
-EVERY comparison including `!=`. A guard over an absent entity therefore
-never fires, rather than erroring or accidentally matching. Write
-`state.nearest_enemy and state.nearest_enemy.kind != 'deku_baba'` to mean
-"there is an enemy and it isn't a baba".
+EVERY comparison including `!=` and `not in`. A guard over an absent
+entity therefore never fires, rather than erroring or accidentally
+matching. Write `state.nearest_enemy and state.nearest_enemy.kind !=
+'deku_baba'` to mean "there is an enemy and it isn't a baba".
+
+`not in` can't be handled by the sentinel's own dunders (Python asks the
+CONTAINER, whose reflected `==` yields False, which `not in` negates to
+True — an absence would fire the guard). Compile therefore rewrites any
+comparison chain containing `in`/`not in` into a call to `_cmp_chain`,
+which returns False outright when any operand is ABSENT. Ordinary
+comparisons stay on the sentinel's dunder path, byte-for-byte the ported
+behavior.
+
+Evaluation never raises: a guard that cannot be evaluated as written
+(missing event field, type mismatch, division by zero) does not fire and
+comes back as a warning for the caller to journal — a guard must never
+be able to kill the 20 Hz loop.
 """
 
 from __future__ import annotations
 
 import ast
+import operator
 from dataclasses import dataclass, field
 
 
@@ -54,6 +68,23 @@ class CompiledGuard:
     state_paths: set = field(default_factory=set)
     #: Bare names — event fields for `where`; a load error for `when`.
     event_names: set = field(default_factory=set)
+
+
+class _MembershipRewriter(ast.NodeTransformer):
+    """Rewrite comparison chains containing `in`/`not in` into `_cmp_chain`
+    calls so ABSENT operands yield False (see module docstring). Runs
+    AFTER whitelist validation — guard authors cannot write calls, and
+    leading-underscore names are rejected, so `_cmp_chain` is unreachable
+    and unshadowable from guard source."""
+
+    def visit_Compare(self, node: ast.Compare):
+        self.generic_visit(node)
+        if not any(isinstance(op, (ast.In, ast.NotIn)) for op in node.ops):
+            return node
+        ops = ast.Tuple(elts=[ast.Constant(type(op).__name__) for op in node.ops],
+                        ctx=ast.Load())
+        return ast.Call(func=ast.Name(id="_cmp_chain", ctx=ast.Load()),
+                        args=[ops, node.left, *node.comparators], keywords=[])
 
 
 def _attr_chain(node: ast.Attribute):
@@ -96,8 +127,13 @@ def compile_guard(src: str, owner: str) -> CompiledGuard:
             if id(node) not in inner:
                 state_paths.add(chain)
         elif isinstance(node, ast.Name) and node.id != "state":
+            if node.id.startswith("_"):
+                raise GuardError(
+                    f"{owner}: names starting with '_' are reserved "
+                    f"({node.id!r} in guard {src!r})")
             event_names.add(node.id)
 
+    tree = ast.fix_missing_locations(_MembershipRewriter().visit(tree))
     code = compile(tree, f"<guard:{owner}>", "eval")
     return CompiledGuard(src=src, code=code, state_paths=state_paths,
                          event_names=event_names)
@@ -145,6 +181,21 @@ class _Absent:
 
 ABSENT = _Absent()
 
+_CMP_OPS = {
+    "Eq": operator.eq, "NotEq": operator.ne, "Lt": operator.lt,
+    "LtE": operator.le, "Gt": operator.gt, "GtE": operator.ge,
+    "In": lambda a, b: a in b, "NotIn": lambda a, b: a not in b,
+}
+
+
+def _cmp_chain(ops, *operands):
+    """Evaluate a rewritten comparison chain: any ABSENT operand makes the
+    whole chain False, `not in` included."""
+    if any(o is ABSENT for o in operands):
+        return False
+    return all(_CMP_OPS[op](operands[i], operands[i + 1])
+               for i, op in enumerate(ops))
+
 
 class StateView:
     """Attribute-chain access over the curated digest dict.
@@ -185,9 +236,14 @@ def eval_guard(guard: CompiledGuard, event: dict = None, state: dict = None):
     env = dict(event or {})
     env["state"] = StateView(state or {})
     try:
-        return bool(eval(guard.code, {"__builtins__": {}}, env)), None
+        return bool(eval(guard.code,
+                         {"__builtins__": {}, "_cmp_chain": _cmp_chain},
+                         env)), None
     except NameError as e:
         missing = getattr(e, "name", str(e))
         return False, f"references {missing!r} which this event does not carry"
-    except TypeError as e:
-        return False, f"type error evaluating {guard.src!r}: {e}"
+    except Exception as e:
+        # A guard must never be able to kill the 20 Hz loop: whatever it
+        # raises (type mismatch, division by zero), it did not fire and
+        # the caller journals why.
+        return False, f"could not evaluate {guard.src!r}: {type(e).__name__}: {e}"

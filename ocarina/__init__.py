@@ -16,7 +16,10 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: post-first-light rulings ratified into the contract, and `on:` event
 #: names now validated at load. In 0.x, the minor digit carries the
 #: major-bump meaning.
-OCARINA_VERSION = "0.2.0"
+#: 0.2.1: two guard-layer bugfixes toward the ratified absence contract —
+#: `not in` no longer fires on an absent entity, and a guard that raises
+#: (e.g. ZeroDivisionError) warns instead of killing the 20 Hz loop.
+OCARINA_VERSION = "0.2.1"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1
