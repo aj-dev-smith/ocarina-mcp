@@ -157,6 +157,12 @@ MACHINE_EVENTS = ("entered", "exited", "behavior_done", "behavior_aborted",
                   "wake", "journal", "directive", "escalation", "diagnostic")
 ALL_EVENTS = WORLD_EVENTS + MACHINE_EVENTS
 
+#: The machine events transitions may match on. The rest are record-only
+#: (a transition on `entered` firing a goto that emits `entered` is an
+#: infinite loop inside one tick); `on:` naming one is a load error.
+DISPATCHED_MACHINE_EVENTS = ("behavior_done", "behavior_aborted")
+DISPATCHABLE_EVENTS = WORLD_EVENTS + DISPATCHED_MACHINE_EVENTS
+
 
 class SeenKinds:
     """First-sighting tracker for the `novel` field on spawn events —

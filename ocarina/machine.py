@@ -13,14 +13,14 @@ warnings don't):
 
 1. strict parse (miniyaml; unknown keys rejected at every level)
 2. structure (unique names, initial chains, goto targets, leaf/interior)
-3. guards (whitelist, state paths vs schema, cooldowns, wake defaults)
+3. guards and triggers (whitelist, state paths vs schema, `on` names a
+   dispatchable event, cooldowns, wake defaults)
 4. leaves (behaviors exist and import, unguarded behavior_done in scope)
 5. reachability from `initial` (warnings)
 
-One reading of MACHINE.md made explicit here: `do` may be a list, but at
-most one of its actions may move or suspend the machine (`goto`, `wake`,
-`hold`), and that action must come last — `journal` entries execute
-first. Two gotos in one transition would be ambiguous brain surgery.
+The terminal-verb rule (`do` lists allow at most one of goto/wake/hold,
+last) started as this module's reading of MACHINE.md and was ratified
+into it 2026-08-01.
 """
 
 from __future__ import annotations
@@ -309,6 +309,17 @@ def _parse_transition(raw, owner: str, diags: list, seen_names: set):
                     err(f"guard {guard.src!r}: {problem}")
     if kind == "event" and (not isinstance(on, str) or not on):
         err("'on' must be an event name")
+        on = None
+    elif kind == "event" and on not in senses.DISPATCHABLE_EVENTS:
+        # A transition that can never fire must not load silently — the
+        # state-path discipline, applied to event names.
+        if on in senses.MACHINE_EVENTS:
+            err(f"'on: {on}': {on} is recorded but never dispatched to "
+                f"transitions (dispatchable machine events: "
+                f"{', '.join(senses.DISPATCHED_MACHINE_EVENTS)})")
+        else:
+            err(f"'on: {on}' is not in the event grammar "
+                f"(see senses.py ALL_EVENTS)")
         on = None
 
     do_raw = raw.get("do")

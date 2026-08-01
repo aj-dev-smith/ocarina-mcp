@@ -16,8 +16,8 @@ checked at fire time (a `where` naming a field its event doesn't carry
 does not fire, and the miss is journaled once per (transition, field) —
 ported behavior).
 
-Absence semantics (this module's one design decision, documented because
-MACHINE.md doesn't spec it): a `state.*` path whose entity is legitimately
+Absence semantics (this module's one design decision, ratified into
+MACHINE.md 2026-08-01): a `state.*` path whose entity is legitimately
 absent at runtime — `state.nearest_enemy.dist` with no enemy in view —
 resolves to the ABSENT sentinel, which is falsy and compares False in
 EVERY comparison including `!=`. A guard over an absent entity therefore

@@ -12,7 +12,11 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: a diff touching SURFACE.md or MACHINE.md is a major bump, full stop.
 #: 0.x = building toward the first complete implementation of the blessed
 #: contract; 1.0.0 is "the surface is fully implemented as blessed".
-OCARINA_VERSION = "0.1.0"
+#: 0.2.0: the MACHINE.md clarification pass (2026-08-01) — the six
+#: post-first-light rulings ratified into the contract, and `on:` event
+#: names now validated at load. In 0.x, the minor digit carries the
+#: major-bump meaning.
+OCARINA_VERSION = "0.2.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

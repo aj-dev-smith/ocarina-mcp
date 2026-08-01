@@ -6,6 +6,16 @@ state guards, explicit leaf completion, version pinning all decided in
 conversation). Part of the contract with SURFACE.md; a change here is a
 major version bump and needs AJ's blessing.
 
+**Clarification pass, 2026-08-01 (post-first-light):** six points where
+this file was silent and the built server had to choose were reviewed
+and ratified — AJ delegating the ruling to the mind as this surface's
+primary user. Each is now specified in place below (scalar continuation,
+absence semantics, terminal verbs, self-goto edge state, the machine-
+event vocabulary, the wake deadline); ocarina bumped 0.1.0 → 0.2.0 per
+SURFACE.md Versioning. No machine.yaml that loaded *and worked* before
+this pass is invalidated; `on:` names that could never fire now fail
+loudly at load instead of silently (format version stays 1).
+
 The machine is **source in the save-file repo**; ocarina is its runtime.
 This file specifies that source: the files, the grammar, the guard
 language, the behavior interface, and what `reload_machine()` validates.
@@ -35,7 +45,13 @@ later addition — the server is the only consumer.
 ## machine.yaml grammar
 
 Strict miniyaml (stdlib YAML subset); unknown keys are load errors at
-every level, per the rules.py discipline.
+every level, per the rules.py discipline. One addition to the ported
+subset (ratified 2026-08-01): **scalar continuation** — a line indented
+deeper than its key that is neither `key: value` nor a list item folds
+into the previous string scalar with a single space; the multiline
+`when:` in the example below relies on it. Everything else the subset
+rejects (tabs, flow syntax, anchors, block scalars, duplicate keys)
+stays rejected with a line number.
 
 ```yaml
 version: 1
@@ -88,7 +104,11 @@ transitions:                          # root scope: the skeleton wake set lives 
   error.
 - **Node names are unique machine-wide.** Nesting expresses scope;
   `goto` and `force_state` take the bare name.
-- `do` is one action or a list; `default` is a single non-wake action.
+- `do` is one action or a list. At most one of a list's actions may be a
+  **terminal verb** (`goto`, `wake`, `hold` — they move the machine,
+  freeze it, or explicitly do nothing) and it must come last; `journal`
+  entries execute first. Two gotos in one transition would be ambiguous
+  brain surgery. `default` is a single non-wake action.
 
 ### Triggers: two kinds, one transition shape
 
@@ -105,7 +125,11 @@ A transition has **`on` + optional `where`** (event-triggered) **or**
   hysteresis; `cooldown_s` stacks on top). On entering the transition's
   scope, the prior value is taken as false — a condition already true on
   entry fires immediately (walk into the room with two babas already in
-  range: the reflex trips on arrival).
+  range: the reflex trips on arrival). **Scope entry means the active
+  chain changed**: a self-goto (the explicit `behavior_done` loop)
+  restarts the behavior but does not reset edge state — a condition
+  still true across the loop boundary does not refire every iteration.
+  Hysteresis beats scope-entry reset (ratified 2026-08-01).
 
 Some things exist only as events (a howl leaves no trace in state) and
 some only as state (distance to the nearest enemy); the grammar honestly
@@ -124,7 +148,13 @@ versa: docs/19 §5.
   then channel push with the wake pack. **Every transition that wakes
   must declare a non-wake `default`** — what to do when no usable answer
   arrives (ported rule; a frozen game waiting on a mind that never
-  answers is the failure this kills).
+  answers is the failure this kills). "No usable answer" is bounded by
+  the server's wake deadline (`--wake-deadline`, default 300 s): when it
+  expires, the `default` runs and the game resumes. An operational knob
+  on the server, deliberately not machine.yaml grammar — the machine
+  says *what* to do, how-long-to-wait is deployment (ratified
+  2026-08-01; per-transition deadlines can be added later without
+  breaking anything).
 - `journal` templates `{field}` from the event (event-triggered only).
 - There is **no pad verb**. Ever.
 
@@ -134,6 +164,17 @@ Events (and each tick's `when` sweep) dispatch **innermost-out**: the
 current leaf's transitions first, then each ancestor's, root last. First
 match wins; within a node, file order. **Cooldowns are consumed at match
 time** even if the action is then skipped — the wake-storm rule, ported.
+
+The event grammar is closed (senses.py owns it; ratified 2026-08-01):
+the world categories plus the machine events `entered · exited ·
+behavior_done · behavior_aborted · wake · journal · directive ·
+escalation · diagnostic`. All of them land in the one timeline, but only
+`behavior_done` and `behavior_aborted` are **dispatchable** — the rest
+are record-only (a transition on `entered` firing a goto that emits
+`entered` is an infinite loop inside one tick). An `on:` naming a
+record-only or unknown event is a load error: a transition that can
+never fire must not load silently (the state-path discipline, applied to
+event names).
 
 ### The guard language
 
@@ -145,6 +186,15 @@ anywhere else remains rejected.
 
 - Bare names resolve to the triggering event's fields (`where` only);
   `state.*` paths resolve into the curated state digest.
+- **Absent entities never match** (ratified 2026-08-01): a `state.*`
+  path whose entity is legitimately absent at runtime —
+  `state.nearest_enemy.dist` with no enemy in view — resolves to a falsy
+  ABSENT value that compares False in EVERY comparison, **including
+  `!=`**. A guard over an absent entity never fires, rather than
+  erroring or accidentally matching (a reflex that trips because nothing
+  is nearby is the failure this kills). The idiom for "there is an enemy
+  and it isn't a baba":
+  `state.nearest_enemy and state.nearest_enemy.kind != 'deku_baba'`.
 - **The guard vocabulary IS the sense vocabulary**: guards read the same
   curated fields the mind reads in `oot://state`, not the raw values
   behaviors see. "Presented, not computed" is thereby enforced at the
@@ -217,9 +267,10 @@ warnings don't):
 1. Strict parse: miniyaml, unknown keys rejected at every level.
 2. Structure: unique node names; `initial` chains resolve to leaves;
    every `goto` and `default` target exists; leaf/interior shape rules.
-3. Guards: AST whitelist (+ `state.*` attribute chains only); every
-   `state.*` path exists in the state schema; cooldowns non-negative;
-   every waking transition has a non-wake `default`.
+3. Guards and triggers: AST whitelist (+ `state.*` attribute chains
+   only); every `state.*` path exists in the state schema; every `on`
+   names a dispatchable event; cooldowns non-negative; every waking
+   transition has a non-wake `default`.
 4. Leaves: every referenced behavior exists in the loaded corpus (a
    missing behavior is a load error, not a runtime surprise); behavior
    modules import cleanly; every leaf's scope chain has its unguarded

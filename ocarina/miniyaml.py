@@ -9,11 +9,12 @@ reads in diffs — it has to stay comment-friendly and hand-editable.
 
 Supported: nested maps with identifier keys, block lists (of scalars or
 maps), scalars (int incl. 0x-hex, float, true/false/null, quoted or bare
-strings), and # comments. One ocarina addition to the ported subset:
-**scalar continuation** — lines indented deeper than their key that are
-neither `key: value` nor list items fold into the previous string scalar
-with a single space. MACHINE.md's own grammar example wraps a `when:`
-guard across two lines; the blessed contract requires this.
+strings), and # comments. One ocarina addition to the ported subset
+(ratified into MACHINE.md 2026-08-01): **scalar continuation** — lines
+indented deeper than their key that are neither `key: value` nor list
+items fold into the previous string scalar with a single space.
+MACHINE.md's own grammar example wraps a `when:` guard across two lines;
+the contract requires this.
 
 Everything else is REJECTED with a line number rather than guessed at —
 tabs, flow syntax ([a, b] / {k: v}), anchors, multiline strings, duplicate

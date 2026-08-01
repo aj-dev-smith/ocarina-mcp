@@ -159,6 +159,22 @@ class TestValidation(unittest.TestCase):
                     do: goto leaf
             """), "behavior_done")
 
+    def test_on_record_only_machine_event(self):
+        # `entered` is recorded but never dispatched — a transition on it
+        # can never fire, so it must not load silently.
+        self.check(self.extra("""\
+            - name: bad
+              on: entered
+              do: goto leaf
+            """), "recorded but never dispatched")
+
+    def test_on_unknown_event(self):
+        self.check(self.extra("""\
+            - name: bad
+              on: spwan
+              do: goto leaf
+            """), "not in the event grammar")
+
     def test_wake_needs_default(self):
         self.check(self.extra("""\
             - name: bad

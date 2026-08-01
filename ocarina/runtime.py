@@ -33,8 +33,9 @@ from .guards import eval_guard
 from .link import LinkError
 from .machine import Action, Machine, Transition, load_machine
 
-#: Machine events transitions may match on. See module docstring.
-_DISPATCHED_MACHINE_EVENTS = ("behavior_done", "behavior_aborted")
+#: Machine events transitions may match on — senses.py owns the
+#: vocabulary; machine.py rejects `on:` names outside it at load.
+_DISPATCHED_MACHINE_EVENTS = senses.DISPATCHED_MACHINE_EVENTS
 
 
 def _from_wire(msg: dict) -> Optional[dict]:

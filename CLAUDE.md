@@ -19,7 +19,7 @@ already caught one of its classics (§17's dist_y sign, live).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (82; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (84; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame).
 - Run: `python3 -m ocarina --repo <save-file-repo>` — the repo declares
   the machine under `machine/`; SoH connects in over Sail (43384).
@@ -31,16 +31,21 @@ already caught one of its classics (§17's dist_y sign, live).
   `executor.py` (+ the blessed preemption extension), `server.py` (stdio
   MCP + channel push). `protocol/link/game/miniyaml/behavior*` are ports.
 
-## Pending AJ review (candidate MACHINE.md clarifications, next major)
+## Resolved 2026-08-01: the clarification pass (was "Pending AJ review")
 
-Where the blessed contract was silent, code chose and documented — each
-in the module docstring: miniyaml scalar continuation (MACHINE.md's own
-multiline `when` example needs it); absent state entities compare False
-in EVERY comparison including `!=`; `do` lists allow one terminal verb
-(goto/wake/hold), last; self-goto keeps `when` edge state (hysteresis
-beats scope-entry reset); machine-event vocabulary grew by
-journal/directive/escalation/diagnostic; wake deadline defaults 300s
-(`--wake-deadline`).
+The six points where the blessed contract was silent and code chose were
+reviewed and ratified into MACHINE.md — AJ delegating the ruling to the
+mind as the surface's primary user ("Ocarina is meant to be an interface
+for YOU"). All six blessed as built: miniyaml scalar continuation;
+absent entities compare False in every comparison including `!=`; one
+terminal verb per `do` list, last; self-goto keeps `when` edge state;
+machine-event vocabulary grew (with only behavior_done/behavior_aborted
+dispatchable); wake deadline 300s as a server knob. The review also
+closed a gap item 5 exposed: `on:` names are now validated at load
+against the dispatchable set — a transition that can never fire is a
+load error, not a silent stall. Ocarina 0.1.0 → 0.2.0. Deferred idea,
+not built: a load-time *warning* for `!=` on a `state.*` path with no
+truthiness check on its entity (the absence-semantics foot-gun lint).
 
 ## Rules for this repo
 
