@@ -135,7 +135,12 @@ def digest(state: dict) -> dict:
         out["nearest_enemy"] = {
             "kind": actor_name(near.get("id", -1)),
             "dist": float(near.get("dist_xz", 0.0)),
-            "above": float(near.get("dist_y", 0.0)),
+            # dist_y is yDistToPlayer = player.y - actor.y (Actor_HeightDiff,
+            # z_actor.c:1397): NEGATIVE when the actor is above Link. Negate
+            # so `above` means what it says — verified live against the
+            # room-0 skulltula (1072 up, wire said -1073) on first light,
+            # 2026-08-01. The workshop's probe_room negates it identically.
+            "above": -float(near.get("dist_y", 0.0)),
         }
     return out
 
