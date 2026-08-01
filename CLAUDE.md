@@ -1,34 +1,42 @@
 # ocarina — session orientation
 
-You are in the ocarina repo: the MCP server piece of OoT Bench. It is
-freshly seeded; **the surface has NOT been designed yet.**
+You are in the ocarina repo: the MCP server piece of OoT Bench.
+**`SURFACE.md` exists as a DRAFT** (captured from the 2026-07-31 design
+sessions) and has not had its hardening pass — that, plus the machine's
+on-disk format, is the next work here.
 
-**Read first:** `../oot-dojo/docs/18-three-piece-architecture.md` (the
-architecture and the decisions behind it), then
-`../oot-dojo/docs/17-expedition-directives.md`, and `../oot-dojo/CLAUDE.md`
-for the workshop's map — including `docs/08-false-signals.md`, whose
-discipline applies in this repo too.
+**Read first:** `SURFACE.md`, then
+`../oot-dojo/docs/19-senses-and-the-machine-2026-07-31.md` (the substance)
+and `../oot-dojo/docs/18-three-piece-architecture.md` (the shape; mind its
+correction header). The workshop's `../oot-dojo/CLAUDE.md` maps the
+validated internals; `docs/08-false-signals.md` discipline applies here
+fully.
 
-Rules for this repo, in force from the seed commit:
+Rules for this repo:
 
-1. **Surface before code.** The first artifact is `SURFACE.md` — the full
-   tool/resource contract, designed deliberately, because the surface IS
-   the fairness ruleset. No MCP tool code lands before it exists and AJ
-   has blessed it.
-2. **Internals are ported, not rewritten.** The 20 Hz executor, freeze
-   machinery, rules engine, scan op, merge gate — all validated in the
-   workshop (`../oot-dojo/ootdojo/`, `../oot-dojo/ootbench/`) with tests.
-   Ocarina is a thin stdio skin over them.
-3. **Stdlib-only** (workshop convention carries over): the server must run
-   anywhere Python does.
-4. **Fairness lives in the surface, never in prose.** If a rule can be
-   enforced by not mounting a verb, that is the enforcement — mode-gate
-   the practice tools (savestates, dojo trials, probes); expedition mode
-   mounts none of them.
-5. **Registrations write through.** Triggers, modes, and skills the agent
-   registers are declared in the playthrough repo and rehydrated on
-   connect; the server's live state is never the only copy (docs/18,
-   "write-through").
-6. Platform constraint (verified 2026-07-31): Claude Code cannot subscribe
-   to MCP resources — resources are the VIEW, `await_wake` is the only
-   push channel.
+1. **Surface before code.** SURFACE.md must be hardened and blessed by AJ
+   before any tool code lands. The draft is a contract-in-waiting, not
+   permission to start.
+2. **The north star is the narration layer.** Ocarina is an
+   audio-description track for a player with an unusual sensory profile.
+   Curation rules live in SURFACE.md ("presented, not computed"; the UI
+   principle; identification gating; vocabulary-not-grammar). Every new
+   sense field must pass them.
+3. **Internals are ported, not rewritten.** The 20 Hz executor, freeze
+   machinery, rules-engine validation, scan — all validated with tests in
+   `../oot-dojo/ootdojo/` and `../oot-dojo/ootbench/`. Ocarina is a thin
+   stdio skin over them.
+4. **Stdlib-only.**
+5. **No practice tools on this surface, ever.** Savestates, drills, and
+   gate tools are workshop dev-tooling for instrument validation — they
+   are not mode-gated here, they are absent (AJ, 2026-07-31: shortcuts
+   would be cheating for a real benchmark). Game-native saves only.
+6. **The machine is source in the save-file repo.** Ocarina runs it;
+   `reload_machine()` validates + hot-swaps; connect rehydrates from the
+   repo. The server's live state is never the only copy. The 20 Hz leaves
+   are called **behaviors** — never "skills", which means Claude Code
+   SKILL.md artifacts only.
+7. **Wake transport is MCP channels** (freeze-confirmed first, then push).
+   A long-poll `await_wake` fallback exists in the spec for non-Claude
+   clients but is not built now. Platform facts: channels work over local
+   stdio; delivery queues until idle; resources cannot be subscribed to.
