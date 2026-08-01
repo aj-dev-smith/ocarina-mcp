@@ -47,6 +47,8 @@ these modules were ported from live in the OoT Bench workshop repo
 
 Run it: `python3 -m ocarina --repo <save-file-repo>` (the repo declares
 the machine under `machine/`; the game connects in over Sail).
+`examples/first-light/` is a working save-file repo — the one that flew
+the first live session.
 
 License: TBD — open-sourcing the layers is the plan once the foundation is
 in place.

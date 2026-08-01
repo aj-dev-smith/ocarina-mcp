@@ -1,0 +1,48 @@
+# First light: boot into the save file, then stand watch while a human
+# walks Link around. The machine holds no pad in `stand_watch`, so the
+# keyboard stays live — ocarina narrates, AJ plays.
+version: 1
+initial: boot
+
+nodes:
+  boot:
+    behavior: boot_from_title_v1
+    transitions:
+      - name: booted
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal save file loaded, standing watch
+          - goto stand_watch
+      - name: boot-retry
+        on: behavior_done
+        do: goto boot
+  stand_watch:
+    behavior: stand_watch_v1
+    transitions:
+      - name: keep-watching
+        on: behavior_done
+        do: goto stand_watch
+  explore_room:
+    behavior: wander_scan_v2
+    transitions:
+      - name: wander-stuck
+        on: behavior_done
+        where: outcome == 'failure'
+        do:
+          - journal wander made no net progress, standing watch instead
+          - goto stand_watch
+      - name: keep-exploring
+        on: behavior_done
+        do: goto explore_room
+
+transitions:
+  - name: novel-actor
+    on: spawn
+    where: novel == 1
+    do: journal first sighting of a {kind}
+  - name: took-damage
+    on: damage_taken
+    do: wake took damage, now at {hearts_after} hearts
+    default: hold ouch
+    cooldown_s: 15
