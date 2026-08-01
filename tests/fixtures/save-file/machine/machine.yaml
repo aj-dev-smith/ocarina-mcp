@@ -1,0 +1,53 @@
+# Test fixture machine: the MACHINE.md example shape, wired to test behaviors.
+version: 1
+initial: explore
+
+nodes:
+  explore:
+    initial: navigate_field
+    transitions:
+      - name: novel-actor
+        on: spawn
+        where: novel == 1
+        do: wake novel actor sighted
+        default: hold keep exploring
+        cooldown_s: 30
+      - name: keep-going
+        on: behavior_done
+        do: goto navigate_field
+    children:
+      navigate_field:
+        behavior: walk_about_v1
+        transitions:
+          - name: nightfall-reflex
+            on: environment
+            where: cue == 'nightfall'
+            do: goto navigate_field_night
+          - name: baba-in-reach
+            when: state.nearest_enemy.kind == 'deku_baba'
+                  and state.nearest_enemy.dist <= 800
+            do: goto kill_baba
+      navigate_field_night:
+        behavior: walk_about_v1
+        transitions:
+          - name: back-to-day
+            on: environment
+            where: cue == 'daybreak'
+            do: goto navigate_field
+      kill_baba:
+        behavior: kill_baba_v1
+        transitions:
+          - name: baba-done
+            on: behavior_done
+            where: outcome == 'success'
+            do:
+              - journal baba down after {duration_s}s
+              - goto navigate_field
+
+transitions:
+  - name: health-drop
+    on: damage_taken
+    where: hearts_after <= 3
+    do: wake health critical
+    default: hold no reflex yet
+    cooldown_s: 5

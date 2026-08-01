@@ -34,13 +34,19 @@ machine's on-disk format).
 
 ## Status
 
-**Surface hardening in progress.** The tool/resource surface is the
-contract and gets designed — and blessed — before any tool code is
-written. `SURFACE.md` and `MACHINE.md` are drafts under active hardening.
-The design record and the validated internals this server will wrap live
-in the OoT Bench workshop repo (`oot-dojo`) — everything mechanical here
-(executor, freeze discipline, rules-engine validation, collision
-scanning) has already been proven against the real game there.
+**Contract blessed (2026-08-01); server under construction.** `SURFACE.md`
+and `MACHINE.md` are the blessed contract; ocarina 0.x implements it —
+the machine loader/validator, guard language, 20 Hz executor with
+preemption, freeze-confirmed wake cycle, and stdio MCP surface are built
+and tested offline (`python3 -m unittest discover -s tests -t .`).
+Tools/resources that wait on instrument work (dialogue text, pause-menu
+navigation, screenshot) are registered and return honest
+not-yet-implemented errors. The design record and the validated internals
+these modules were ported from live in the OoT Bench workshop repo
+(`oot-dojo`).
+
+Run it: `python3 -m ocarina --repo <save-file-repo>` (the repo declares
+the machine under `machine/`; the game connects in over Sail).
 
 License: TBD — open-sourcing the layers is the plan once the foundation is
 in place.
