@@ -47,6 +47,27 @@ OFFICIAL_NAMES = {
     0x0013: "keese",           # all variants; params select fly/perch/fire/ice
     0x0037: "skulltula",
     0x0095: "skullwalltula",
+    # Second light, 2026-08-01: named from AJ's eyewitness sightings in
+    # Deku Tree room 0, ids verified against Shipwright's actor_table.h.
+    0x0018: "fairy",           # En_Elf — first light's mystery actor was Navi
+    0x002E: "door",            # Door_Shutter, the dungeon doors
+    0x000F: "spider_web",      # Bg_Ydan_Sp — the web over the atrium floor hole
+    0x0125: "bush",            # En_Kusa, the cuttable shrubs
+    0x000A: "treasure_chest",  # En_Box — the gestalt is instant on sight
+}
+
+#: Actors with NO sprite — a sighted player cannot see them, so narrating
+#: their spawns is X-ray vision, worse than an unknown_0x____ (which at
+#: least flags a real visible thing we couldn't name). Ids verified
+#: against actor_table.h; closes the first-light "narrates Link himself
+#: and loader actors" instrument item. Deliberately dropped, not
+#: forgotten (0x0015 En_Item00 drops stay narratable but unnamed for now:
+#: a sighted player sees "a heart", not "an item" — needs param-aware
+#: naming).
+NEVER_PRESENTED = {
+    0x0000,   # Player — Link is the viewer, not a sighting
+    0x0023,   # En_Holl — invisible room-transition plane
+    0x011B,   # Elf_Msg — invisible Navi-message trigger volume (9 in room 0)
 }
 
 
@@ -220,7 +241,10 @@ def translate(msg: dict, seen: SeenKinds):
     if name == "load_game":
         return {"event": "environment", "cue": "game_loaded"}
     if name == "OnActorInit":
-        kind = actor_name(msg.get("actorId", -1))
+        actor_id = msg.get("actorId", -1)
+        if actor_id in NEVER_PRESENTED:
+            return None
+        kind = actor_name(actor_id)
         return {"event": "spawn", "kind": kind,
                 "novel": 1 if seen.sight(kind) else 0}
     if name == "actor_kill":

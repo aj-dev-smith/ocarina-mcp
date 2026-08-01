@@ -23,7 +23,12 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: VERB on `when` transitions; the contract only restricts the templating.
 #: Plain-text journal/wake/hold on a state trigger now load; `{field}`
 #: templates on a `when` transition are the load error (all verbs).
-OCARINA_VERSION = "0.2.2"
+#: 0.3.0: the sensorium grew from second light's eyewitness pass — five
+#: official names (fairy, door, spider_web, bush, treasure_chest; ids
+#: verified against Shipwright's actor_table.h) and sprite-less actors
+#: (Player, En_Holl, Elf_Msg) dropped from spawn narration. Gap-fills
+#: inside the claimed frontier, no contract touch.
+OCARINA_VERSION = "0.3.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

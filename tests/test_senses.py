@@ -24,5 +24,37 @@ class TestDigest(unittest.TestCase):
         self.assertEqual(digest["enemies"], 0)
 
 
+class TestSpawnNarration(unittest.TestCase):
+    """Second light (2026-08-01): names grown from AJ's eyewitness
+    sightings; sprite-less actors dropped from the spawn stream."""
+
+    class _Seen:
+        def sight(self, kind):
+            return True
+
+    def spawn(self, actor_id):
+        return senses.translate({"event": "OnActorInit", "actorId": actor_id},
+                                self._Seen())
+
+    def test_sighted_actors_carry_official_names(self):
+        for actor_id, name in ((0x0125, "bush"), (0x0018, "fairy"),
+                               (0x002E, "door"), (0x000F, "spider_web"),
+                               (0x000A, "treasure_chest")):
+            ev = self.spawn(actor_id)
+            self.assertEqual(ev["kind"], name)
+            self.assertEqual(ev["event"], "spawn")
+
+    def test_spriteless_actors_are_never_presented(self):
+        # Link himself, room-transition planes, Navi-message trigger
+        # volumes: a sighted player cannot see any of them, so their
+        # spawns must not narrate (X-ray vision otherwise).
+        for actor_id in (0x0000, 0x0023, 0x011B):
+            self.assertIsNone(self.spawn(actor_id))
+
+    def test_unknown_still_flags_the_gap(self):
+        ev = self.spawn(0x01B9)
+        self.assertEqual(ev["kind"], "unknown_0x01B9")
+
+
 if __name__ == "__main__":
     unittest.main()
