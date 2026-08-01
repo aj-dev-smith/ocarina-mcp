@@ -1,11 +1,12 @@
 # ocarina — session orientation
 
 You are in the ocarina repo: the MCP server piece of OoT Bench.
-**`SURFACE.md` exists as a DRAFT** (captured from the 2026-07-31 design
-sessions) and has not had its hardening pass — that, plus the machine's
-on-disk format, is the next work here.
+**`SURFACE.md` and `MACHINE.md` are BLESSED (AJ, 2026-08-01)** — the
+hardening pass is done and the contract is in force. The next work here
+is **building the server**: porting the validated workshop internals
+behind the blessed surface (stdio MCP, stdlib-only).
 
-**Read first:** `SURFACE.md`, then
+**Read first:** `SURFACE.md` and `MACHINE.md`, then
 `../oot-dojo/docs/19-senses-and-the-machine-2026-07-31.md` (the substance)
 and `../oot-dojo/docs/18-three-piece-architecture.md` (the shape; mind its
 correction header). The workshop's `../oot-dojo/CLAUDE.md` maps the
@@ -14,9 +15,10 @@ fully.
 
 Rules for this repo:
 
-1. **Surface before code.** SURFACE.md must be hardened and blessed by AJ
-   before any tool code lands. The draft is a contract-in-waiting, not
-   permission to start.
+1. **The surface is the contract.** SURFACE.md + MACHINE.md are blessed;
+   code implements them exactly. A change to either file is a major
+   version bump (SURFACE.md, Versioning) and needs AJ's blessing —
+   never edit them as a side effect of an implementation convenience.
 2. **The north star is the narration layer.** Ocarina is an
    audio-description track for a player with an unusual sensory profile.
    Curation rules live in SURFACE.md ("presented, not computed"; the UI

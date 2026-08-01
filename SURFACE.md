@@ -1,10 +1,11 @@
 # SURFACE.md — ocarina's tool/resource contract
 
-**STATUS: DRAFT** — captured from the 2026-07-31 design sessions (AJ
-participating and ratifying; full record: `../oot-dojo/docs/19`, with
-docs/17–18 for context). Needs a hardening pass in a fresh session — plus
-the machine's on-disk format — and AJ's explicit blessing before any tool
-code is written.
+**STATUS: BLESSED (AJ, 2026-08-01)** — captured from the 2026-07-31
+design sessions, hardened 2026-08-01 (AJ participating and ratifying
+throughout; full record: `../oot-dojo/docs/19`, with docs/17–18 for
+context). This file and `MACHINE.md` are the contract; tool code
+implements them exactly. A change to either file is a major version bump
+and needs AJ's blessing (see Versioning).
 
 ## The goal (AJ, verbatim in spirit)
 
@@ -31,11 +32,14 @@ computes every event; detection is free via GameInteractor hooks.
   calls return clean errors.
 - **Sound is an information channel.** The sound team's work as event
   text: howls, stingers, BGM shifts, the low-health alarm.
-- **Identification gating ("????").** No name until the game presents it
-  to THIS save file (Navi/Z-target). Unknown actors are descriptors
-  ("small skeletal biped"); after in-game identification the narration
-  uses the name forever. Registry is save-file state, write-through. A new
-  repo is a new kid.
+- **Official names, no discovery system.** (Decided 2026-08-01, AJ —
+  supersedes docs/19's identification gating.) Actors carry their
+  official names from first sighting: the name is the text form of the
+  visual gestalt — ten-year-old AJ saw it and knew "skeleton" instantly,
+  and the proper noun carries no more game knowledge than the sprite
+  already gave a sighted player. Z-targeting and asking Navi yields
+  *additional* tips as dialogue text, which the mind may choose to store
+  in its knowledge files — depth is earned; identity is free.
 - **Vocabulary, not grammar.** Events are a small closed grammar with open
   vocabulary. New regions add cue values; a new category is a rare,
   reviewed change.
@@ -54,11 +58,16 @@ computes every event; detection is free via GameInteractor hooks.
 ## What ocarina runs
 
 One thing: a **hierarchical state machine defined as source in the
-save-file repo**. Interior nodes = modes; transitions = guarded events
-(validated: whitelisted guard expressions, cooldowns, mandatory defaults,
-reachability); leaves = **behaviors**, deterministic 20 Hz scripts. Wake
-transitions (`wake_mind`) freeze the game and push a channel message. The
-repo declares; the server runs; `reload_machine` is the only bridge.
+save-file repo** — on-disk format specified in `MACHINE.md`. Interior
+nodes = modes; transitions = guarded triggers, event-triggered (`on` +
+`where`) or state-triggered (`when`, watched at 20 Hz, firing on the
+false→true edge) — validated: whitelisted guard expressions, load-checked
+`state.*` paths, cooldowns, mandatory defaults, reachability. Guards read
+the curated sensorium, so "presented, not computed" binds the machine
+layer too. Leaves = **behaviors**, deterministic 20 Hz scripts, preempted
+at game-op boundaries when a transition leaves them. Wake transitions
+(`wake_mind`) freeze the game and push a channel message. The repo
+declares; the server runs; `reload_machine` is the only bridge.
 On connect, the server rehydrates from the repo — live state is never the
 only copy.
 
@@ -119,7 +128,9 @@ present. The timeline **interleaves world events and machine events**
 Grammar (closed, ~a dozen categories; vocabulary open):
 `telegraph`, `sfx`, `bgm_change`, `environment`, `spawn`, `despawn`,
 `damage_taken`, `damage_dealt`, `actor_state`, `pickup`, `ui`, plus
-machine events (`entered`, `exited`, `behavior_aborted`, `wake`).
+machine events (`entered`, `exited`, `behavior_done`, `behavior_aborted`,
+`wake`). (`behavior_done` added in the 2026-08-01 hardening pass — leaf
+completion is explicit; see MACHINE.md.)
 Example: `{"event": "telegraph", "actor": "deku_baba#3", "cue": "rearing",
 "t": 48212}`.
 
@@ -143,13 +154,32 @@ mind wires as it learns what matters.
 long-poll `await_wake()` tool so non-Claude MCP clients can play. Channels
 are the Claude-native path.
 
+## Versioning (decided 2026-08-01)
+
+- **Semver with benchmark meaning baked into the bump rules.** A diff
+  that touches SURFACE.md or MACHINE.md is a **major** bump, full stop —
+  the contract files ARE the version boundary, so "scoring-relevant" is
+  a review discipline, not a judgment call at comparison time. Minor =
+  internals that cannot change what's observable; patch = bugfixes.
+- **Runs pin, save files record.** The save-file repo carries a lockfile
+  stamped at `create_file` time with ocarina's version + machine format
+  version; `status()` reports both; a mismatch on connect is a loud
+  diagnostic, never a silent adapt. Cross-run comparisons are only
+  claimed at equal major versions.
+- **Coverage-leads-the-frontier composes cleanly:** new-region senses
+  are major bumps, and that's fine — the benchmark artifact reads
+  "% of OoT at ocarina vN," exactly as SWE-bench results name their
+  scaffold (harness and model are separate axes).
+
 ## Open questions for the hardening session
 
-- The machine's on-disk format (files, guard syntax, behavior interface).
-- Versioning for benchmark comparability: what sensorium changes are
-  scoring-relevant, and how runs pin server versions.
-- Identified-registry custody (leaning: ocarina-managed save-file state,
-  write-through, so the gate can't be forgotten).
+- ~~The machine's on-disk format~~ — RESOLVED 2026-08-01: see `MACHINE.md`
+  (files, two-trigger grammar, guard language, behavior interface,
+  reload validation).
+- ~~Versioning for benchmark comparability~~ — RESOLVED 2026-08-01: see
+  Versioning above.
+- ~~Identified-registry custody~~ — MOOT 2026-08-01: identification
+  gating retired (see the naming principle above); no registry exists.
 - Channel burst behavior (undocumented upstream; measure).
 - The exact state-digest schema (`oot://state`) — the single largest
   curation artifact; expect it to grow one region ahead of the player

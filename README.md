@@ -15,25 +15,32 @@ of **OoT Bench**:
 ## The one design principle
 
 **Fairness by construction: the tool surface IS the ruleset.** There is no
-"press button" verb — an agent acts by running skills it has authored,
-executed deterministically at the game's 20 Hz. In expedition mode the
-practice tools (savestates, drill trials) are not mounted at all: a live
-playthrough cannot cheat, because the verbs don't exist on the wire.
+"press button" verb — the agent acts by putting a **hierarchical state
+machine** in a state; its leaves are **behaviors**, deterministic scripts
+executed at the game's 20 Hz. Practice tools (savestates, drill trials)
+are not mode-gated on this surface — they are **absent**: a playthrough
+cannot cheat, because the verbs don't exist on the wire. Saving is
+game-native only (it's a menu function).
 
-What the server owns: the Sail link to the game, the 20 Hz skill executor,
-a trigger engine (reflexes the agent registers, validated and enforced
-without tokens), a behavior state machine, freeze-time thinking
-(`await_wake` — the world stops while the mind decides), and mechanical
+What the server owns: the Sail link to the game, the 20 Hz behavior
+executor, the machine runtime (the machine itself is source in the
+save-file repo; `reload_machine()` validates and hot-swaps), freeze-time
+thinking (a wake freezes the game, then pushes a wake pack over an MCP
+channel — the world stops while the mind decides), and mechanical
 telemetry.
+
+The contract is `SURFACE.md` (tools/resources) and `MACHINE.md` (the
+machine's on-disk format).
 
 ## Status
 
-**Pre-surface-design.** The tool/resource surface is the contract and gets
-designed before any tool code is written. The design record and the
-validated internals this server will wrap live in the OoT Bench workshop
-repo (`oot-dojo`) — everything mechanical here (executor, freeze
-discipline, savestate confirmation, collision scanning) has already been
-proven against the real game there.
+**Surface hardening in progress.** The tool/resource surface is the
+contract and gets designed — and blessed — before any tool code is
+written. `SURFACE.md` and `MACHINE.md` are drafts under active hardening.
+The design record and the validated internals this server will wrap live
+in the OoT Bench workshop repo (`oot-dojo`) — everything mechanical here
+(executor, freeze discipline, rules-engine validation, collision
+scanning) has already been proven against the real game there.
 
 License: TBD — open-sourcing the layers is the plan once the foundation is
 in place.
