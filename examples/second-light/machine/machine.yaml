@@ -1,0 +1,115 @@
+# Second light: the Deku Tree on 0.2.1 — flying the clarification pass.
+# Boot into the save, then stand watch while AJ walks Link (no pad held).
+# Two reflexes exercise the ratified absence semantics against the real
+# game:
+#   unfamiliar-enemy — bare `not in` over a possibly-absent entity. The
+#     0.2.1 fix means it stays SILENT in empty rooms and fires only when
+#     an enemy outside the official vocabulary is actually in view (it
+#     doubles as a live vocabulary-gap detector).
+#   overhead-lurker — dist/above conjunction; the `above` sign's third
+#     outing, now positive-up, and absence must hold the guard False.
+version: 1
+initial: boot
+
+nodes:
+  boot:
+    behavior: boot_from_title_v1
+    transitions:
+      - name: booted
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal save file loaded, standing watch
+          - goto stand_watch
+      - name: boot-retry
+        on: behavior_done
+        do: goto boot
+  stand_watch:
+    behavior: stand_watch_v1
+    transitions:
+      - name: keep-watching
+        on: behavior_done
+        do: goto stand_watch
+  explore_room:
+    behavior: wander_scan_v2
+    transitions:
+      # The MACHINE.md example pattern, live: wander until a baba is in
+      # reach, then hand off to the graded killer.
+      - name: baba-in-reach
+        when: state.nearest_enemy.kind == 'deku_baba'
+              and state.nearest_enemy.dist <= 500
+        do:
+          - journal baba in reach, engaging
+          - goto hunt
+      - name: wander-stuck
+        on: behavior_done
+        where: outcome == 'failure'
+        do:
+          - journal wander made no net progress, standing watch instead
+          - goto stand_watch
+      - name: keep-exploring
+        on: behavior_done
+        do: goto explore_room
+  seek_baba:
+    behavior: approach_baba_v1
+    transitions:
+      - name: baba-reached
+        on: behavior_done
+        where: outcome == 'success'
+        do: goto hunt
+      - name: seek-failed
+        on: behavior_done
+        do:
+          - journal no baba reachable from here, standing watch
+          - goto stand_watch
+  hunt:
+    behavior: deku_baba_v4
+    transitions:
+      # The room-clearing loop: kill, then seek the next; ends when seek
+      # finds nothing reachable.
+      - name: baba-down
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal baba down, seeking the next
+          - goto seek_baba
+      # Rewired mid-flight: hunt-over used to goto explore_room, but
+      # wander_scan_v2 optimizes for open bearings and vetoes bearings
+      # toward enemies — in a dungeon room that means "walk out the
+      # door, avoiding the mission" (it did, in 3.5s; AJ walked us
+      # back). Whiffs now retreat to watch instead.
+      - name: hunt-over
+        on: behavior_done
+        do:
+          - journal no kill this pass, standing watch
+          - goto stand_watch
+
+transitions:
+  - name: novel-actor
+    on: spawn
+    where: novel == 1
+    do: journal first sighting of a {kind}
+  - name: unfamiliar-enemy
+    when: state.nearest_enemy.kind not in ('deku_baba', 'withered_deku_baba',
+          'keese', 'skulltula', 'skullwalltula')
+    do: journal unfamiliar enemy in view, outside the official vocabulary
+    cooldown_s: 10
+  # overhead-lurker removed live 2026-08-01: it keyed on the ceiling
+  # skulltula 1080 units up — information a sighted player at floor level
+  # does not have (AJ's fairness ruling; see the sharpened X-ray backlog
+  # item). It served its test purpose: a live `when` conjunction over a
+  # possibly-absent entity, fired and re-armed correctly. Rebuild it only
+  # after nearest_enemy is sight-gated.
+  # Demoted live 2026-08-01 (second light): waking on every hit froze the
+  # game under AJ's hands twice in 21s. Stage-2: ordinary damage journals;
+  # the freeze-wake is reserved for genuinely critical health.
+  - name: health-critical
+    on: damage_taken
+    where: hearts_after <= 1.0
+    do: wake health critical at {hearts_after} hearts
+    default: hold no reflex yet, mind must decide
+    cooldown_s: 15
+  - name: took-damage
+    on: damage_taken
+    do: journal took damage, {hearts_after} hearts left
+    cooldown_s: 5
