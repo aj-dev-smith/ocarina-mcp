@@ -26,6 +26,7 @@ into it 2026-08-01.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 from typing import Optional
@@ -41,6 +42,9 @@ _VERBS = ("goto", "wake", "journal", "hold")
 #: Verbs that end an action list: they move the machine, freeze it, or
 #: explicitly do nothing. At most one per `do`, last.
 _TERMINAL_VERBS = ("goto", "wake", "hold")
+
+#: `{field}` placeholders in action args (the runtime's _template grammar).
+_TEMPLATE_FIELD_RE = re.compile(r"\{(\w+)\}")
 
 _TOP_KEYS = {"version", "initial", "nodes", "transitions"}
 _NODE_KEYS = {"initial", "children", "behavior", "transitions"}
@@ -340,9 +344,17 @@ def _parse_transition(raw, owner: str, diags: list, seen_names: set):
         elif terminals and actions and actions[-1].verb not in _TERMINAL_VERBS:
             err(f"the {terminals[0].verb!r} action must come last in 'do'")
 
-    if kind == "state" and any(a.verb == "journal" for a in actions):
-        err("'journal' templates fields from the event; it is event-triggered "
-            "only (MACHINE.md action verbs)")
+    # `{field}` templates resolve from the triggering event; a `when`
+    # transition has none, so templated args are load errors there —
+    # plain-text journal/wake/hold on a state trigger is fine (0.2.2
+    # ruling: MACHINE.md restricts the TEMPLATING to events, not the verb).
+    if kind == "state":
+        for a in actions:
+            fields = _TEMPLATE_FIELD_RE.findall(a.arg)
+            if fields:
+                err(f"'{a.verb}' templates {sorted(set(fields))} from the "
+                    f"event, but a 'when' transition has no event to "
+                    f"resolve against (MACHINE.md action verbs)")
 
     cooldown = raw.get("cooldown_s", 0.0)
     if not isinstance(cooldown, (int, float)) or cooldown < 0:

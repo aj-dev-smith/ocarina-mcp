@@ -19,7 +19,11 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: 0.2.1: two guard-layer bugfixes toward the ratified absence contract —
 #: `not in` no longer fires on an absent entity, and a guard that raises
 #: (e.g. ZeroDivisionError) warns instead of killing the 20 Hz loop.
-OCARINA_VERSION = "0.2.1"
+#: 0.2.2: the validator read MACHINE.md's journal sentence as banning the
+#: VERB on `when` transitions; the contract only restricts the templating.
+#: Plain-text journal/wake/hold on a state trigger now load; `{field}`
+#: templates on a `when` transition are the load error (all verbs).
+OCARINA_VERSION = "0.2.2"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

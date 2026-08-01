@@ -219,14 +219,31 @@ class TestValidation(unittest.TestCase):
               do: goto leaf
             """), "no event to resolve against")
 
-    def test_journal_on_when_transition(self):
-        self.check(self.extra("""\
-            - name: bad
+    def test_templated_arg_on_when_transition(self):
+        # `{field}` templates resolve from the event; a `when` transition
+        # has none — for every templating verb, not just journal.
+        for action in ("journal down to {hearts_after} hearts",
+                       "hold waiting on {cue}"):
+            self.check(self.extra(f"""\
+                - name: bad
+                  when: state.hearts <= 1
+                  do:
+                    - {action}
+                    - goto leaf
+                """), "no event to resolve against")
+
+    def test_plain_journal_on_when_transition_is_fine(self):
+        # The 0.2.2 ruling: MACHINE.md restricts the TEMPLATING to events,
+        # not the verb — a state reflex may journal plain text (the stage-2
+        # vigilance rung of the compile-downward ladder).
+        machine, diags = load_text(self.extra("""\
+            - name: fine
               when: state.hearts <= 1
               do:
-                - journal ow
-                - goto leaf
-            """), "event-triggered only")
+                - journal hearts critical, watching
+            """))
+        self.assertEqual([d.msg for d in diags if d.level == "error"], [])
+        self.assertIsNotNone(machine)
 
     def test_goto_target_missing(self):
         self.check(self.extra("""\
