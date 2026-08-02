@@ -77,7 +77,10 @@ silently-never-fires transition shape, twice).
   item); the overlay renders never-sighted census actors grey
   `unsighted` (the acceptance visual). An instrument without the bits
   reads as blind with a loud diagnostic, never silently X-ray.
-  NOT yet eyewitness-verified — the room-0 pass is the wrap item.
+  EYEWITNESS-VERIFIED same day (AJ, room-0 live pass): arrival narrated
+  as sightings with no census burst, bushes narrated a minute later as
+  the view swept them, and the ceiling skulltula never entered journal
+  or slot — the baba in view held `nearest_enemy` from arrival.
 - **0.4.1** — interim vertical sight bound (2026-08-02): enemies beyond
   400 units vertical out of view for slot and count; slot selection
   unified into `nearest_enemy_slot()`. Retired by 0.5.0 the same day.
@@ -95,13 +98,11 @@ silently-never-fires transition shape, twice).
   rate made visible).
 
 **Top open items** (details in `../oot-dojo/harness-backlog.md`):
-the 0.5.0 sight-gating eyewitness pass — second light's room 0 is the
-acceptance test (the skulltula label must read grey `unsighted` with no
-NEAREST marker until AJ looks up the shaft), and it needs the rebuilt
-SoH (the dojo patch grew census `sighted` bits); the example machine's
-removed `overhead-lurker` reflex is now rebuildable per its own in-file
-condition; the `bgm_change` producer (enemy battle music on proximity —
-the game's own fair unseen-enemy channel) is the next sense; attacker
+the `bgm_change` producer (enemy battle music on proximity — the
+game's own fair unseen-enemy channel, and the compensation for losing
+X-ray proximity info) is the next sense; the example machine's removed
+`overhead-lurker` reflex is now rebuildable per its own in-file
+condition; attacker
 identity on `damage_taken` (needs a wire-side patch; nearest-enemy-at-
 freeze is the documented workaround); Object_Kankyo filter; En_Item00
 param-aware naming; the absence-semantics foot-gun lint (deferred);
