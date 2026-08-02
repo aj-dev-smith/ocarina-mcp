@@ -50,16 +50,23 @@ class LabelCase(unittest.TestCase):
         self.assertEqual(self.labels(a), [])
 
     def test_nearest_marker_sits_on_the_digest_slot_holder(self):
+        # Second light's masking room: the ceiling skulltula is nearer in
+        # xz but out of view under the sight-height bound, so the slot —
+        # and therefore the marker — belongs to the baba. The skulltula
+        # keeps its label (the overlay renders beliefs, walls and all);
+        # it just doesn't hold the slot anymore.
         ceiling = enemy(1, actor_id=0x0095, dist=61.0, dist_y=-1073.0)
         baba = enemy(2, dist=250.0)
         out = self.labels(ceiling, baba)
         marked = [l for l in out if "NEAREST_ENEMY" in l["text"]]
-        self.assertEqual([l["key"] for l in marked], [1])
+        self.assertEqual([l["key"] for l in marked], [2])
         self.assertEqual(marked[0]["color"], overlay.COLOR_NEAREST)
+        self.assertEqual([l["key"] for l in out], [1, 2],
+                         "the out-of-view enemy still gets a label")
         # Cross-check against the digest itself: same slot-holder.
         d = senses.digest({"actors": [ceiling, baba]})
-        self.assertEqual(d["nearest_enemy"]["kind"], "skullwalltula")
-        self.assertIn("skullwalltula", marked[0]["text"])
+        self.assertEqual(d["nearest_enemy"]["kind"], "deku_baba")
+        self.assertIn("deku_baba", marked[0]["text"])
 
     def test_dead_enemy_never_holds_the_marker(self):
         dead_near = enemy(1, dist=10.0, health=0)

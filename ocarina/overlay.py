@@ -30,7 +30,7 @@ Label truthfulness notes:
 from __future__ import annotations
 
 from .senses import (NEVER_PRESENTED, OFFICIAL_NAMES, SeenKinds, actor_name,
-                     living_enemies)
+                     nearest_enemy_slot)
 
 #: Colors are semantics, so they live here, not in C++: red marks the
 #: single `nearest_enemy` slot-holder, amber marks a vocabulary gap
@@ -45,11 +45,7 @@ def labels(state: dict, seen: SeenKinds) -> list[dict]:
     """Raw DojoLink snapshot -> the overlay label set (wire shape for the
     `overlay` op: key/text/color per label; a set replaces the whole set).
     """
-    enemies = living_enemies(state)
-    nearest_key = None
-    if enemies:
-        nearest_key = min(enemies,
-                          key=lambda a: a.get("dist_xz", float("inf"))).get("key")
+    nearest_key = (nearest_enemy_slot(state) or {}).get("key")
 
     out = []
     for a in state.get("actors") or []:

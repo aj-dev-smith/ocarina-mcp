@@ -34,7 +34,15 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: novelty), rendered by the new `overlay` dojo op in the Shipwright
 #: patch. Human debug instrument, one-way by construction; no contract
 #: touch.
-OCARINA_VERSION = "0.4.0"
+#: 0.4.1: interim vertical sight bound on the digest's enemy fields —
+#: second light's masking finding (X-ray info displaces fair info: the
+#: ceiling skulltula held the nearest_enemy slot while the baba AJ was
+#: facing appeared nowhere). Enemies beyond 400 units vertical are out
+#: of view for both the slot and the count; slot selection is now the
+#: shared nearest_enemy_slot() so the overlay's NEAREST marker cannot
+#: diverge. Interim heuristic under the delegated interface ruling; real
+#: line-of-sight gating is the pending design pass. No contract touch.
+OCARINA_VERSION = "0.4.1"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

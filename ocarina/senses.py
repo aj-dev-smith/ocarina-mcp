@@ -25,6 +25,12 @@ Known v0 honesty gaps, flagged rather than hidden:
 - `sfx`/`bgm_change`/`telegraph` categories exist in the grammar but have
   NO producers yet — the DojoLink patch does not tap the audio or
   actionFunc hooks. Senses before the frontier crosses them.
+- The enemy fields are sight-bounded only vertically (SIGHT_HEIGHT_BOUND
+  below) — an interim heuristic, not line of sight. It stops a ceiling
+  lurker from masking the enemy actually in view (second light's finding)
+  but still sees through walls on the horizontal, and would blind the
+  digest to a genuinely visible enemy above the bound. Real sight-gating
+  is the design pass that retires it.
 - Scene is a numeric id, not a place name. Naming places is the same
   principle as naming actors; the table just doesn't exist yet.
 """
@@ -101,13 +107,13 @@ SCHEMA = {
         "on_wall": bool,        # climbing, mounting, or hanging
         "dead": bool,           # the death animation
     },
-    "nearest_enemy": {          # the closest visible living enemy
+    "nearest_enemy": {          # the closest living enemy in view
         "kind": str,            # official name (the visual gestalt as text)
         "dist": float,          # apparent distance, xz — a PROJECTION
         "above": float,         # height over Link (docs/08 §17: read it)
     },
     "enemies": int,             # living enemies in view
-}
+}                               # "in view" is SIGHT_HEIGHT_BOUND, interim
 
 
 def check_path(path: tuple) -> str | None:
@@ -126,13 +132,46 @@ def check_path(path: tuple) -> str | None:
 
 
 def living_enemies(state: dict) -> list:
-    """The raw actors the digest counts as living enemies, and — via min
-    dist_xz — the one that holds the single `nearest_enemy` slot. Shared
-    with the debug overlay so its NEAREST marker can never diverge from
-    the slot the digest actually fills (the divergence would be a debug
-    instrument lying about the thing it exists to check)."""
+    """The raw living enemies in the snapshot, before any sight bound."""
     return [a for a in (state.get("actors") or [])
             if a.get("cat") == ACTORCAT_ENEMY and (a.get("health") or 0) > 0]
+
+
+#: Interim vertical sight bound on the digest's enemy fields (second
+#: light, 2026-08-01, harness-backlog): X-ray information doesn't just
+#: leak, it DISPLACES fair information — the room-0 ceiling skulltula
+#: (above +1081) held the single `nearest_enemy` slot all session while
+#: the baba AJ was actually facing appeared nowhere in the narration.
+#: Until real line-of-sight gating (the pending design pass), an enemy
+#: more than this far above or below Link is out of view: a player sees
+#: the room around them, not the ceiling of a 1000-unit shaft. 400
+#: matches the engine's own engagement ceiling (EnSt_IsCloseToPlayer —
+#: a skulltula farther up than this won't even react to Link). The
+#: mirror-image gap this opens — a genuinely visible enemy beyond the
+#: bound goes unnarrated — is flagged in the module docstring.
+SIGHT_HEIGHT_BOUND = 400.0
+
+
+def in_view_enemies(state: dict) -> list:
+    """living_enemies filtered to "in view" — the population behind both
+    the `enemies` count and the `nearest_enemy` slot, so a guard can
+    still read absence of the slot as "no enemy in view". abs() because
+    dist_y is signed (player.y - actor.y) and the bound is vertical
+    distance either way."""
+    return [a for a in living_enemies(state)
+            if abs(a.get("dist_y") or 0.0) <= SIGHT_HEIGHT_BOUND]
+
+
+def nearest_enemy_slot(state: dict) -> dict | None:
+    """The raw actor holding the single `nearest_enemy` slot (min dist_xz
+    over the in-view enemies), or None. Shared with the debug overlay so
+    its NEAREST marker can never diverge from the slot the digest
+    actually fills (the divergence would be a debug instrument lying
+    about the thing it exists to check)."""
+    enemies = in_view_enemies(state)
+    if not enemies:
+        return None
+    return min(enemies, key=lambda a: a.get("dist_xz", float("inf")))
 
 
 def digest(state: dict) -> dict:
@@ -144,7 +183,7 @@ def digest(state: dict) -> dict:
     """
     player = state.get("player") or {}
     flags1 = player.get("state_flags1", 0)
-    enemies = living_enemies(state)
+    enemies = in_view_enemies(state)
     out = {
         "scene": state.get("scene", -1),
         "hearts": state.get("health", 0) / 16.0,
@@ -160,8 +199,8 @@ def digest(state: dict) -> dict:
         },
         "enemies": len(enemies),
     }
-    if enemies:
-        near = min(enemies, key=lambda a: a.get("dist_xz", float("inf")))
+    near = nearest_enemy_slot(state)
+    if near is not None:
         out["nearest_enemy"] = {
             "kind": actor_name(near.get("id", -1)),
             "dist": float(near.get("dist_xz", 0.0)),
