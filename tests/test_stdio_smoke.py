@@ -35,6 +35,14 @@ class TestStdioSmoke(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.repo = Path(self.tmp) / "save-file"
         shutil.copytree(FIXTURE_REPO, self.repo)
+        # The fakegame's baba is in view from the first snapshot; without
+        # this, sighting it fires the fixture machine's novel-actor wake
+        # and freezes the world before autopilot ever runs (correct
+        # behavior, but this test is the plumbing smoke, not the wake
+        # test). Pre-mark the kind as seen this save file.
+        seen = self.repo / ".ocarina" / "seen_kinds.json"
+        seen.parent.mkdir(parents=True, exist_ok=True)
+        seen.write_text('["deku_baba"]')
         self.port = free_port()
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "ocarina", "--repo", str(self.repo),
@@ -109,9 +117,15 @@ class TestStdioSmoke(unittest.TestCase):
             time.sleep(0.2)
         self.assertTrue(status["game_connected"])
 
-        # 4. The sensorium reads the live world through the wire.
-        result = self.rpc("resources/read", {"uri": "oot://state"})
-        digest = json.loads(result["contents"][0]["text"])
+        # 4. The sensorium reads the live world through the wire. The
+        #    enemy fields are sight-gated: the baba enters the digest only
+        #    after the runtime's next sightings fold, so allow it a tick.
+        deadline = time.monotonic() + 5
+        digest = {}
+        while time.monotonic() < deadline and "nearest_enemy" not in digest:
+            result = self.rpc("resources/read", {"uri": "oot://state"})
+            digest = json.loads(result["contents"][0]["text"])
+            time.sleep(0.1)
         self.assertEqual(digest["hearts"], 3.0)
         self.assertEqual(digest["nearest_enemy"]["kind"], "deku_baba")
 

@@ -64,6 +64,9 @@ class TestAutopilot(RuntimeCase):
 
 class TestWhenTransitions(RuntimeCase):
     def test_when_fires_on_edge_and_preempts(self):
+        # Sighting a novel kind now wakes the mind (novel-actor); this
+        # test is about the when-edge, so the kind is already familiar.
+        self.runtime.seen.sight("deku_baba")
         self.tick_until(lambda: self.runtime.executor.active_behavior == "walk_about_v1",
                         msg="walking")
         self.link.world["actors"] = [baba_actor(dist_xz=300.0)]
@@ -76,6 +79,7 @@ class TestWhenTransitions(RuntimeCase):
         self.assertIn("baba-in-reach", aborted["reason"])
 
     def test_kill_loop_success_path(self):
+        self.runtime.seen.sight("deku_baba")     # familiar kind: no novel wake
         self.link.world["actors"] = [baba_actor()]
         self.tick_until(lambda: self.runtime.current == "kill_baba", msg="engaged")
         self.tick_until(lambda: self.runtime.executor.active_behavior == "kill_baba_v1",
@@ -192,15 +196,23 @@ class TestWakes(RuntimeCase):
         self.assertEqual(len(self.packs), 1, "cooldown consumed at match time")
 
     def test_novel_actor_wake_once_per_kind(self):
-        self.link.push_wire({"type": "hook",
-                             "hook": {"type": "OnActorInit", "actorId": 0x0037}})
-        self.tick_until(lambda: self.packs, msg="novel wake")
-        self.assertEqual(self.packs[0]["transition"], "novel-actor")
-        self.runtime.resume()
-        self.link.push_wire({"type": "hook",
-                             "hook": {"type": "OnActorInit", "actorId": 0x0037}})
+        # Spawn narration is census-driven now (docs/22): an actor IN the
+        # room but unsighted narrates nothing; sighting it wakes.
+        lurker = baba_actor(actor_id=0x0037, key=201, sighted=False)
+        self.link.world["actors"] = [lurker]
         for _ in range(5):
             self.runtime.tick()
+            time.sleep(0.01)
+        self.assertFalse(self.packs, "unsighted actor must not narrate")
+        self.link.world["actors"] = [dict(lurker, sighted=True)]
+        self.tick_until(lambda: self.packs, msg="novel wake on sighting")
+        self.assertEqual(self.packs[0]["transition"], "novel-actor")
+        self.runtime.resume()
+        # A second individual of a now-familiar kind: spawn, not novel.
+        self.link.world["actors"] = [baba_actor(actor_id=0x0037, key=202)]
+        for _ in range(5):
+            self.runtime.tick()
+            time.sleep(0.01)
         self.assertEqual(len(self.packs), 1, "second sighting is not novel")
 
 

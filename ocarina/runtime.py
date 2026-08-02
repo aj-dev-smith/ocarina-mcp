@@ -87,6 +87,8 @@ class MachineRuntime:
                                                   # machine content (navi ships it)
         self.executor = BehaviorExecutor(game)
         self.seen = senses.SeenKinds(self.repo / ".ocarina" / "seen_kinds.json")
+        self.sightings = senses.Sightings()
+        self._sight_warned = False
 
         self._lock = threading.RLock()
         self._cooldowns: dict = {}      # transition name -> monotonic last-match
@@ -119,7 +121,7 @@ class MachineRuntime:
         return st.get("gameplay_frames") if st else None
 
     def _digest(self) -> dict:
-        return senses.digest(self._last_state or {})
+        return senses.digest(self._last_state or {}, self.sightings)
 
     # -- loading (the reload_machine bridge) ---------------------------------
 
@@ -192,6 +194,7 @@ class MachineRuntime:
         with self._lock:
             self._tick_connection()
             self._drain_wire()
+            self._fold_sightings()
             self._finish_behavior()
             self._push_overlay(now)
             if self._wake is not None:
@@ -219,7 +222,7 @@ class MachineRuntime:
             return
         if self._last_state is None:
             return
-        labels = overlay.labels(self._last_state, self.seen)
+        labels = overlay.labels(self._last_state, self.seen, self.sightings)
         age = now - self._overlay_pushed_at
         if age < 0.2 or (labels == self._overlay_last and age < 1.0):
             return
@@ -244,15 +247,25 @@ class MachineRuntime:
                 pass
 
     def _drain_wire(self) -> None:
+        # Pre-play (attract demo, title screen): the world hasn't started,
+        # so world events don't narrate (AJ, 2026-08-02). load_game is the
+        # boundary itself and always passes. Suppression needs a snapshot
+        # SAYING save_loaded is false — no snapshot yet is "unknown", and
+        # censoring on unknown would eat real events in the connect window.
+        st = self._last_state
+        save_loaded = st.get("save_loaded", True) if st else True
         for msg in self.game.link.drain_events():
             ev = _from_wire(msg)
             if ev is None:
                 self.dropped_wire += 1
                 continue
-            curated = senses.translate(ev, self.seen)
+            curated = senses.translate(ev)
             if curated is None:
                 if ev.get("event") != "frame":
                     self.dropped_wire += 1
+                continue
+            if not save_loaded and ev.get("event") != "load_game":
+                self.dropped_wire += 1
                 continue
             self._record(curated)
             if self.executor.collecting:
@@ -260,6 +273,26 @@ class MachineRuntime:
                 # shape in the workshop; feed them the raw event.
                 self.executor.note_event(ev)
             self._dispatch(curated)
+
+    def _fold_sightings(self) -> None:
+        """Census-driven spawn narration (docs/22): fold the freshest
+        snapshot into the sighted set and narrate first sightings.
+        Idempotent per actor key, so re-reading an unchanged snapshot
+        narrates nothing."""
+        st = self._last_state
+        if st is None:
+            return
+        if (senses.census_carries_sight(st) is False
+                and st.get("save_loaded") and not self._sight_warned):
+            self._sight_warned = True
+            self._record({"event": "diagnostic",
+                          "text": "census carries no `sighted` bits — this "
+                                  "instrument predates sight-gating (rebuild SoH "
+                                  "with the current dojo patch); world senses are "
+                                  "BLIND, deliberately, rather than X-ray"})
+        for ev in senses.spawn_events(self.sightings.observe(st), self.seen):
+            self._record(ev)
+            self._dispatch(ev)
 
     def _finish_behavior(self) -> None:
         run = self.executor.finish()

@@ -25,27 +25,35 @@ Label truthfulness notes:
 - The game-side renderer draws labels through walls (no z-buffer, no
   distance cull) BY DESIGN: the overlay shows beliefs, and X-ray beliefs
   are the bugs it exists to catch.
+- Sight-gating (docs/22) renders as state: an actor the sensorium has
+  never sighted shows a grey `unsighted` label. The acceptance test is
+  visual — in second light's room 0 the ceiling skulltula must read
+  unsighted with no NEAREST marker until AJ walks to the shaft and looks
+  up.
 """
 
 from __future__ import annotations
 
-from .senses import (NEVER_PRESENTED, OFFICIAL_NAMES, SeenKinds, actor_name,
-                     nearest_enemy_slot)
+from .senses import (NEVER_PRESENTED, OFFICIAL_NAMES, SeenKinds, Sightings,
+                     actor_name, nearest_enemy_slot)
 
 #: Colors are semantics, so they live here, not in C++: red marks the
 #: single `nearest_enemy` slot-holder, amber marks a vocabulary gap
-#: (unknown_0x____ — an instrument item, worth catching the eye), white
-#: is a named, presented actor.
+#: (unknown_0x____ — an instrument item, worth catching the eye), grey
+#: marks a census actor the sensorium has never sighted (the label AJ
+#: can see on a thing ocarina officially can't — sight-gating rendered
+#: judgeable on sight), white is a named, sighted actor.
 COLOR_NEAREST = [255, 90, 90]
 COLOR_UNKNOWN = [255, 210, 80]
+COLOR_UNSIGHTED = [140, 140, 140]
 COLOR_NAMED = [240, 240, 240]
 
 
-def labels(state: dict, seen: SeenKinds) -> list[dict]:
+def labels(state: dict, seen: SeenKinds, sightings: Sightings) -> list[dict]:
     """Raw DojoLink snapshot -> the overlay label set (wire shape for the
     `overlay` op: key/text/color per label; a set replaces the whole set).
     """
-    nearest_key = (nearest_enemy_slot(state) or {}).get("key")
+    nearest_key = (nearest_enemy_slot(state, sightings) or {}).get("key")
 
     out = []
     for a in state.get("actors") or []:
@@ -66,9 +74,14 @@ def labels(state: dict, seen: SeenKinds) -> list[dict]:
         # game side only re-renders a label whose text changed).
         lines.append(f"dist {round(dist / 10) * 10:.0f} "
                      f"above {round(above / 10) * 10:+.0f}")
+        unsighted = not sightings.sighted(key)
+        if unsighted:
+            lines.append("unsighted")
         if key == nearest_key:
             lines.append("NEAREST_ENEMY")
             color = COLOR_NEAREST
+        elif unsighted:
+            color = COLOR_UNSIGHTED
         elif actor_id not in OFFICIAL_NAMES:
             color = COLOR_UNKNOWN
         else:

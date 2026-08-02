@@ -20,21 +20,24 @@ from .test_runtime import RuntimeCase
 
 
 def enemy(key, actor_id=0x0055, dist=100.0, dist_y=0.0, health=2,
-          cat=ACTORCAT_ENEMY):
+          cat=ACTORCAT_ENEMY, sighted=True):
     return {"id": actor_id, "cat": cat, "key": key, "dist_xz": dist,
-            "dist_y": dist_y, "health": health}
+            "dist_y": dist_y, "health": health, "sighted": sighted}
 
 
 class LabelCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.seen = SeenKinds(Path(self.tmp) / "seen.json")
+        self.sightings = senses.Sightings()
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def labels(self, *actors):
-        return overlay.labels({"actors": list(actors)}, self.seen)
+        state = {"save_loaded": True, "scene": 85, "actors": list(actors)}
+        self.sightings.observe(state)
+        return overlay.labels(state, self.seen, self.sightings)
 
     def test_never_presented_actors_get_no_label(self):
         # A label on a thing AJ can't see would be the overlay committing
@@ -51,22 +54,30 @@ class LabelCase(unittest.TestCase):
 
     def test_nearest_marker_sits_on_the_digest_slot_holder(self):
         # Second light's masking room: the ceiling skulltula is nearer in
-        # xz but out of view under the sight-height bound, so the slot —
-        # and therefore the marker — belongs to the baba. The skulltula
-        # keeps its label (the overlay renders beliefs, walls and all);
-        # it just doesn't hold the slot anymore.
-        ceiling = enemy(1, actor_id=0x0095, dist=61.0, dist_y=-1073.0)
+        # xz but unsighted (the camera has never shown the shaft), so the
+        # slot — and therefore the marker — belongs to the baba. The
+        # skulltula keeps a label (the overlay renders beliefs, walls and
+        # all), rendered grey `unsighted`: the acceptance visual from
+        # docs/22.
+        ceiling = enemy(1, actor_id=0x0095, dist=61.0, dist_y=-1073.0,
+                        sighted=False)
         baba = enemy(2, dist=250.0)
         out = self.labels(ceiling, baba)
         marked = [l for l in out if "NEAREST_ENEMY" in l["text"]]
         self.assertEqual([l["key"] for l in marked], [2])
         self.assertEqual(marked[0]["color"], overlay.COLOR_NEAREST)
-        self.assertEqual([l["key"] for l in out], [1, 2],
-                         "the out-of-view enemy still gets a label")
+        by_key = {l["key"]: l for l in out}
+        self.assertIn("unsighted", by_key[1]["text"])
+        self.assertEqual(by_key[1]["color"], overlay.COLOR_UNSIGHTED)
         # Cross-check against the digest itself: same slot-holder.
-        d = senses.digest({"actors": [ceiling, baba]})
+        d = senses.digest({"actors": [ceiling, baba]}, self.sightings)
         self.assertEqual(d["nearest_enemy"]["kind"], "deku_baba")
         self.assertIn("deku_baba", marked[0]["text"])
+
+    def test_sighted_actor_never_reads_unsighted(self):
+        out = self.labels(enemy(1))
+        self.assertNotIn("unsighted", out[0]["text"])
+        self.assertNotEqual(out[0]["color"], overlay.COLOR_UNSIGHTED)
 
     def test_dead_enemy_never_holds_the_marker(self):
         dead_near = enemy(1, dist=10.0, health=0)

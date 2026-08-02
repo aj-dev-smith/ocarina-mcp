@@ -12,11 +12,14 @@ from __future__ import annotations
 from ocarina.protocol import ACTORCAT_ENEMY
 
 
-def baba_actor(dist_xz: float = 300.0, health: int = 2) -> dict:
-    return {"id": 0x0055, "cat": ACTORCAT_ENEMY, "params": 0, "key": 111,
+def baba_actor(dist_xz: float = 300.0, health: int = 2,
+               sighted: bool = True, key: int = 111,
+               actor_id: int = 0x0055) -> dict:
+    return {"id": actor_id, "cat": ACTORCAT_ENEMY, "params": 0, "key": key,
             "pos": [0.0, 0.0, dist_xz], "yaw": 0, "dist_xz": dist_xz,
             "dist_y": 0.0, "yaw_to_player": 0x8000, "health": health,
-            "targeted": False, "frozen": 0}
+            "targeted": False, "frozen": 0, "drawn": sighted,
+            "sighted": sighted}
 
 
 class StubLink:

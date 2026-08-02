@@ -168,6 +168,9 @@ class FakeGame:
                     "dist_xz": dist, "dist_y": 0.0,
                     "yaw_to_player": yaw_to_player,
                     "health": max(b["health"], 0), "targeted": False, "frozen": 0,
+                    # The clearing is open ground; the baba is in view from
+                    # the start (sight bits per the 2026-08-02 instrument).
+                    "drawn": True, "sighted": True,
                 })
             return {
                 "save_loaded": True, "scene": 85, "health": max(p["health"], 0),

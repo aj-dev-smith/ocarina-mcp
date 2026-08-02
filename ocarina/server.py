@@ -299,7 +299,8 @@ class ServerCore:
             if not self.game.link.connected:
                 body = {"error": "game not connected"}
             else:
-                body = senses.digest(self.game.state())
+                body = senses.digest(self.game.state(),
+                                     self.runtime.sightings)
         elif base == "oot://events":
             q = parse_qs(parsed.query)
 

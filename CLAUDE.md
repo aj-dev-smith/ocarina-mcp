@@ -65,13 +65,22 @@ silently-never-fires transition shape, twice).
   names `fairy` (first light's unknown_0x0018 was Navi), `door`,
   `spider_web`, `bush`, `treasure_chest`; sprite-less actors (Player,
   En_Holl, Elf_Msg) dropped from spawn narration via NEVER_PRESENTED.
+- **0.5.0** — SIGHT-GATED NARRATION (2026-08-02; dojo docs/22 ratified
+  by AJ same day, all four open calls as recommended). The census now
+  carries `drawn`/`sighted` bits — "sighted" is the game's own Z-target
+  attention visibility predicate (on screen + the focus-to-focus
+  occlusion line test targeting uses, `z_actor.c` Attention_Find).
+  `spawn` narrates first sightings (the doorway census burst is gone);
+  the enemy fields cover ever-sighted-this-scene enemies (object
+  permanence — camera swings don't flicker the slot); narration is
+  suppressed pre-play (`save_loaded` gate closes the attract-demo
+  item); the overlay renders never-sighted census actors grey
+  `unsighted` (the acceptance visual). An instrument without the bits
+  reads as blind with a loud diagnostic, never silently X-ray.
+  NOT yet eyewitness-verified — the room-0 pass is the wrap item.
 - **0.4.1** — interim vertical sight bound (2026-08-02): enemies beyond
-  400 units vertical are out of view for the `nearest_enemy` slot AND
-  the `enemies` count (second light's masking finding — the ceiling
-  skulltula displacing the baba in view); slot selection is now the
-  shared `nearest_enemy_slot()` so overlay and digest cannot diverge.
-  Heuristic under the delegated interface ruling; retires when real
-  sight-gating lands.
+  400 units vertical out of view for slot and count; slot selection
+  unified into `nearest_enemy_slot()`. Retired by 0.5.0 the same day.
 - **0.4.0** — the debug overlay (second light's wrap item), built and
   eyewitness-verified 2026-08-02: the runtime pushes world-space labels
   over every actor ocarina can see (name/unknown, digest dist/above,
@@ -86,18 +95,18 @@ silently-never-fires transition shape, twice).
   rate made visible).
 
 **Top open items** (details in `../oot-dojo/harness-backlog.md`):
-sight-gating — design pass DRAFTED 2026-08-02 as
-`../oot-dojo/docs/22-sight-gating-2026-08-02.md` (expose the Z-target
-attention predicate — frustum + wall-occlusion line test — as a
-`sighted` bit; first-sighting spawn narration; object-permanence
-population behind the enemy fields), awaiting AJ's ruling on its five
-open questions; the 0.4.1 vertical bound is the interim stopgap; attacker
+the 0.5.0 sight-gating eyewitness pass — second light's room 0 is the
+acceptance test (the skulltula label must read grey `unsighted` with no
+NEAREST marker until AJ looks up the shaft), and it needs the rebuilt
+SoH (the dojo patch grew census `sighted` bits); the example machine's
+removed `overhead-lurker` reflex is now rebuildable per its own in-file
+condition; the `bgm_change` producer (enemy battle music on proximity —
+the game's own fair unseen-enemy channel) is the next sense; attacker
 identity on `damage_taken` (needs a wire-side patch; nearest-enemy-at-
 freeze is the documented workaround); Object_Kankyo filter; En_Item00
 param-aware naming; the absence-semantics foot-gun lint (deferred);
 dojo-trial `approach_baba_v1` (UNGRADED — its walking leg never ran);
-dialogue text onto the wire; the sight-gating design pass is the top
-curation item.
+dialogue text onto the wire.
 
 ## Rules for this repo
 

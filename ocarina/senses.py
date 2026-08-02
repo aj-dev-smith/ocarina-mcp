@@ -16,21 +16,33 @@ DojoLink wire already carries. Every field must pass the curation rules:
   grammar; new regions add cue/kind values, never categories, without
   review.
 
-Known v0 honesty gaps, flagged rather than hidden:
-- `spawn` is emitted from OnActorInit, which fires for the whole room at
-  scene load — that is "entered the world", not "came into view". A
-  sighted player does not see through walls; visibility gating is
-  frontier curation work. (Filed here so watching Expedition Zero can
-  price it.)
+World senses are SIGHT-GATED as of 0.5.0 (dojo docs/22, blessed by AJ
+2026-08-02): `spawn` narrates an actor's first sighting, and the enemy
+fields cover only enemies the player has sighted this scene. "Sighted"
+is the game's own Z-target attention visibility predicate, computed
+wire-side per census actor (on screen + the focus-to-focus occlusion
+line test targeting itself uses) — the OoT team's ruling on "can the
+player see this", exposed rather than reinvented. Narration is
+suppressed entirely until `save_loaded` (the attract demo is not the
+world; AJ's ruling, same pass).
+
+Known honesty gaps, flagged rather than hidden:
+- Sight is camera-based, not eye-based: Link's back can be to a thing
+  the camera shows. Ruled correct (what the camera shows is what a real
+  player knows), recorded here because it is a judgment call.
+- Object permanence is approximated as scene-lifetime keys: an actor
+  pointer reused within one scene after an unload would inherit sighted
+  state. Rare, accepted, and visible in the journal if it ever narrates
+  strangely.
+- An instrument without the sighted bits (pre-2026-08-02 patch) reads
+  as BLIND — no spawns, no enemy fields. Loud by design (the runtime
+  diagnoses it); the silent alternative is X-ray vision coming back
+  unannounced.
 - `sfx`/`bgm_change`/`telegraph` categories exist in the grammar but have
   NO producers yet — the DojoLink patch does not tap the audio or
-  actionFunc hooks. Senses before the frontier crosses them.
-- The enemy fields are sight-bounded only vertically (SIGHT_HEIGHT_BOUND
-  below) — an interim heuristic, not line of sight. It stops a ceiling
-  lurker from masking the enemy actually in view (second light's finding)
-  but still sees through walls on the horizontal, and would blind the
-  digest to a genuinely visible enemy above the bound. Real sight-gating
-  is the design pass that retires it.
+  actionFunc hooks. Senses before the frontier crosses them. The enemy-
+  BGM cue (battle music on proximity, no sight test — the game's own
+  fair unseen-enemy channel) is the next producer to build.
 - Scene is a numeric id, not a place name. Naming places is the same
   principle as naming actors; the table just doesn't exist yet.
 """
@@ -113,7 +125,7 @@ SCHEMA = {
         "above": float,         # height over Link (docs/08 §17: read it)
     },
     "enemies": int,             # living enemies in view
-}                               # "in view" is SIGHT_HEIGHT_BOUND, interim
+}                               # "in view" = ever-sighted this scene (Sightings)
 
 
 def check_path(path: tuple) -> str | None:
@@ -132,58 +144,118 @@ def check_path(path: tuple) -> str | None:
 
 
 def living_enemies(state: dict) -> list:
-    """The raw living enemies in the snapshot, before any sight bound."""
+    """The raw living enemies in the snapshot, before any sight gate."""
     return [a for a in (state.get("actors") or [])
             if a.get("cat") == ACTORCAT_ENEMY and (a.get("health") or 0) > 0]
 
 
-#: Interim vertical sight bound on the digest's enemy fields (second
-#: light, 2026-08-01, harness-backlog): X-ray information doesn't just
-#: leak, it DISPLACES fair information — the room-0 ceiling skulltula
-#: (above +1081) held the single `nearest_enemy` slot all session while
-#: the baba AJ was actually facing appeared nowhere in the narration.
-#: Until real line-of-sight gating (the pending design pass), an enemy
-#: more than this far above or below Link is out of view: a player sees
-#: the room around them, not the ceiling of a 1000-unit shaft. 400
-#: matches the engine's own engagement ceiling (EnSt_IsCloseToPlayer —
-#: a skulltula farther up than this won't even react to Link). The
-#: mirror-image gap this opens — a genuinely visible enemy beyond the
-#: bound goes unnarrated — is flagged in the module docstring.
-SIGHT_HEIGHT_BOUND = 400.0
+class Sightings:
+    """Ever-sighted actor keys — the object permanence behind the enemy
+    fields and spawn narration (docs/22, blessed 2026-08-02: the wire's
+    `sighted` bit is the Z-target attention predicate; persistence is
+    actor-key lifetime). Once a player has seen a thing they can track
+    it — you can't unsee the baba by backing away from it — so gating
+    the enemy fields on this-frame sight would make them flicker with
+    every camera swing; keys accumulate instead, clearing on scene
+    change (the server-side stand-in for actor-key lifetime; the
+    pointer-reuse caveat is in the module docstring).
+
+    Server-session state, deliberately NOT persisted to the save-file
+    repo: this is what the player currently holds in view-memory, not
+    save-file knowledge — SeenKinds carries the durable half. Mutated
+    only via observe(); reads are set-membership.
+    """
+
+    def __init__(self):
+        self._scene = None
+        self._keys: set = set()
+
+    def observe(self, state: dict) -> list:
+        """Fold one raw snapshot in; returns the census actors sighted
+        for the FIRST time (census order) for the caller to narrate.
+        Pre-play snapshots (attract demo: save_loaded false) contribute
+        nothing — the demo is not the world (AJ, 2026-08-02)."""
+        if not state.get("save_loaded", False):
+            return []
+        scene = state.get("scene")
+        if scene != self._scene:
+            self._scene = scene
+            self._keys.clear()
+        fresh = []
+        for a in state.get("actors") or []:
+            key = a.get("key")
+            if key is None or not a.get("sighted", False):
+                continue
+            if key not in self._keys:
+                self._keys.add(key)
+                fresh.append(a)
+        return fresh
+
+    def sighted(self, key) -> bool:
+        return key in self._keys
 
 
-def in_view_enemies(state: dict) -> list:
-    """living_enemies filtered to "in view" — the population behind both
-    the `enemies` count and the `nearest_enemy` slot, so a guard can
-    still read absence of the slot as "no enemy in view". abs() because
-    dist_y is signed (player.y - actor.y) and the bound is vertical
-    distance either way."""
+def spawn_events(fresh: list, seen: SeenKinds) -> list:
+    """First-sighting census actors -> the `spawn` events to narrate.
+    This replaces the old OnActorInit translation: an event per actor
+    coming INTO VIEW, not per actor entering the world at room load.
+    NEVER_PRESENTED still applies — the attention predicate projects
+    position only, so an invisible trigger volume can be "on screen"."""
+    events = []
+    for a in fresh:
+        actor_id = a.get("id", -1)
+        if actor_id in NEVER_PRESENTED:
+            continue
+        kind = actor_name(actor_id)
+        events.append({"event": "spawn", "kind": kind,
+                       "novel": 1 if seen.sight(kind) else 0})
+    return events
+
+
+def census_carries_sight(state: dict):
+    """True/False: do this snapshot's census actors carry the `sighted`
+    bit; None when there is no census to judge. False means the
+    instrument predates sight-gating and the world senses are blind —
+    the runtime turns that into a loud diagnostic, once."""
+    actors = state.get("actors") or []
+    if not actors:
+        return None
+    return any("sighted" in a for a in actors)
+
+
+def in_view_enemies(state: dict, sightings: Sightings) -> list:
+    """Living enemies the player has sighted (ever, this scene) — the
+    population behind both the `enemies` count and the `nearest_enemy`
+    slot, so a guard can still read absence of the slot as "no enemy in
+    view"."""
     return [a for a in living_enemies(state)
-            if abs(a.get("dist_y") or 0.0) <= SIGHT_HEIGHT_BOUND]
+            if sightings.sighted(a.get("key"))]
 
 
-def nearest_enemy_slot(state: dict) -> dict | None:
+def nearest_enemy_slot(state: dict, sightings: Sightings) -> dict | None:
     """The raw actor holding the single `nearest_enemy` slot (min dist_xz
     over the in-view enemies), or None. Shared with the debug overlay so
     its NEAREST marker can never diverge from the slot the digest
     actually fills (the divergence would be a debug instrument lying
     about the thing it exists to check)."""
-    enemies = in_view_enemies(state)
+    enemies = in_view_enemies(state, sightings)
     if not enemies:
         return None
     return min(enemies, key=lambda a: a.get("dist_xz", float("inf")))
 
 
-def digest(state: dict) -> dict:
+def digest(state: dict, sightings: Sightings) -> dict:
     """Raw DojoLink snapshot -> the curated digest guards and the mind see.
 
     Behaviors see the raw snapshot server-side at 20 Hz; this is the
     narration. Must match SCHEMA exactly — the load-time path check is
-    only as good as this function's fidelity to it.
+    only as good as this function's fidelity to it. `sightings` is
+    required, not defaulted: a call site that forgot it would be a call
+    site quietly reinstating X-ray vision.
     """
     player = state.get("player") or {}
     flags1 = player.get("state_flags1", 0)
-    enemies = in_view_enemies(state)
+    enemies = in_view_enemies(state, sightings)
     out = {
         "scene": state.get("scene", -1),
         "hearts": state.get("health", 0) / 16.0,
@@ -199,7 +271,7 @@ def digest(state: dict) -> dict:
         },
         "enemies": len(enemies),
     }
-    near = nearest_enemy_slot(state)
+    near = nearest_enemy_slot(state, sightings)
     if near is not None:
         out["nearest_enemy"] = {
             "kind": actor_name(near.get("id", -1)),
@@ -263,9 +335,10 @@ class SeenKinds:
         return True
 
 
-def translate(msg: dict, seen: SeenKinds):
+def translate(msg: dict):
     """One wire message (DojoLink dojo_event or Sail hook) -> one curated
-    world event, or None to drop it.
+    world event, or None to drop it. (Spawn narration no longer lives
+    here — it is census-driven; see Sightings/spawn_events.)
 
     The translation IS curation: everything the wire carries that a
     player was never shown gets dropped here, and every category emitted
@@ -295,12 +368,11 @@ def translate(msg: dict, seen: SeenKinds):
     if name == "load_game":
         return {"event": "environment", "cue": "game_loaded"}
     if name == "OnActorInit":
-        actor_id = msg.get("actorId", -1)
-        if actor_id in NEVER_PRESENTED:
-            return None
-        kind = actor_name(actor_id)
-        return {"event": "spawn", "kind": kind,
-                "novel": 1 if seen.sight(kind) else 0}
+        # No longer a presentation: init fires for the whole room at
+        # load ("entered the world"). `spawn` now narrates first
+        # SIGHTINGS, via Sightings.observe + spawn_events (docs/22,
+        # blessed 2026-08-02). Dropped deliberately, not forgotten.
+        return None
     if name == "actor_kill":
         # Redundant with enemy_defeat for enemies; not a presentation for
         # props. Dropped deliberately, not forgotten.

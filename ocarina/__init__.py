@@ -42,7 +42,18 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: shared nearest_enemy_slot() so the overlay's NEAREST marker cannot
 #: diverge. Interim heuristic under the delegated interface ruling; real
 #: line-of-sight gating is the pending design pass. No contract touch.
-OCARINA_VERSION = "0.4.1"
+#: 0.5.0: SIGHT-GATED NARRATION (dojo docs/22, blessed by AJ 2026-08-02;
+#: minor digit = the major-bump meaning in 0.x). The instrument's census
+#: now carries drawn/sighted bits — "sighted" is the game's own Z-target
+#: attention visibility predicate (on screen + focus-to-focus occlusion
+#: line test). `spawn` narrates first sightings, not room loads; the
+#: enemy fields cover ever-sighted-this-scene enemies (object
+#: permanence, so camera swings don't flicker the slot); narration is
+#: suppressed pre-play (attract demo, save_loaded gate); the overlay
+#: renders never-sighted census actors grey `unsighted`. Retires 0.4.1's
+#: interim vertical bound. An old instrument without the bits reads as
+#: blind, loudly diagnosed — never silently X-ray.
+OCARINA_VERSION = "0.5.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1
