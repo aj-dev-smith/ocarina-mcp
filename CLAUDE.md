@@ -65,6 +65,13 @@ silently-never-fires transition shape, twice).
   names `fairy` (first light's unknown_0x0018 was Navi), `door`,
   `spider_web`, `bush`, `treasure_chest`; sprite-less actors (Player,
   En_Holl, Elf_Msg) dropped from spawn narration via NEVER_PRESENTED.
+- **0.4.1** — interim vertical sight bound (2026-08-02): enemies beyond
+  400 units vertical are out of view for the `nearest_enemy` slot AND
+  the `enemies` count (second light's masking finding — the ceiling
+  skulltula displacing the baba in view); slot selection is now the
+  shared `nearest_enemy_slot()` so overlay and digest cannot diverge.
+  Heuristic under the delegated interface ruling; retires when real
+  sight-gating lands.
 - **0.4.0** — the debug overlay (second light's wrap item), built and
   eyewitness-verified 2026-08-02: the runtime pushes world-space labels
   over every actor ocarina can see (name/unknown, digest dist/above,
@@ -79,8 +86,12 @@ silently-never-fires transition shape, twice).
   rate made visible).
 
 **Top open items** (details in `../oot-dojo/harness-backlog.md`):
-`nearest_enemy` sight-gating — second light showed X-ray info *masks*
-fair info (the ceiling skulltula hid the baba AJ was facing); attacker
+sight-gating — design pass DRAFTED 2026-08-02 as
+`../oot-dojo/docs/22-sight-gating-2026-08-02.md` (expose the Z-target
+attention predicate — frustum + wall-occlusion line test — as a
+`sighted` bit; first-sighting spawn narration; object-permanence
+population behind the enemy fields), awaiting AJ's ruling on its five
+open questions; the 0.4.1 vertical bound is the interim stopgap; attacker
 identity on `damage_taken` (needs a wire-side patch; nearest-enemy-at-
 freeze is the documented workaround); Object_Kankyo filter; En_Item00
 param-aware naming; the absence-semantics foot-gun lint (deferred);
