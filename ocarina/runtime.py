@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from . import senses
+from . import overlay, senses
 from .events import EventLog
 from .executor import BehaviorExecutor
 from .game import Game
@@ -96,6 +96,9 @@ class MachineRuntime:
         self._pending_start = False     # start current leaf's behavior when free
         self._last_state: Optional[dict] = None
         self._last_state_at = 0.0
+        self.overlay_enabled = True     # human debug labels; see overlay.py
+        self._overlay_last: Optional[list] = None
+        self._overlay_pushed_at = 0.0
         self._was_connected = False
         self._stopping = False
         self.wakes = 0
@@ -190,6 +193,7 @@ class MachineRuntime:
             self._tick_connection()
             self._drain_wire()
             self._finish_behavior()
+            self._push_overlay(now)
             if self._wake is not None:
                 self._service_wake(now)
                 return
@@ -198,6 +202,33 @@ class MachineRuntime:
             if self.game.link.connected:
                 self._sweep_when(now)
                 self._maybe_start_behavior()
+
+    def _push_overlay(self, now: float) -> None:
+        """Keep the game's debug labels current with the sensorium's
+        beliefs. Runs above the wake gate deliberately: a frozen world
+        with the mind thinking is exactly when AJ leans in to inspect
+        what ocarina believes, and the game-side store drops labels 3s
+        after the last push, so the keepalive must keep flowing.
+
+        Push on change (rate-capped) or as a 1 s keepalive. Never raises:
+        the overlay is a passenger, and a display glitch must not touch
+        the 20 Hz loop.
+        """
+        if not self.overlay_enabled or not self.game.link.connected:
+            self._overlay_last = None
+            return
+        if self._last_state is None:
+            return
+        labels = overlay.labels(self._last_state, self.seen)
+        age = now - self._overlay_pushed_at
+        if age < 0.2 or (labels == self._overlay_last and age < 1.0):
+            return
+        try:
+            self.game.overlay_push(labels)
+        except LinkError:
+            return
+        self._overlay_last = labels
+        self._overlay_pushed_at = now
 
     def _tick_connection(self) -> None:
         connected = self.game.link.connected

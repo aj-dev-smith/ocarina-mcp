@@ -54,6 +54,12 @@ class FakeGame:
         self.hud_panels: dict[str, list] = {p: [] for p in
                                             ("warden", "navigator", "strategist", "dojo")}
         self.hud_ticker: list[str] = []
+        # Overlay store. Enough of DojoOverlay.cpp's contract to test the
+        # pusher offline: labels validated, a set replaces the whole set.
+        # `applies` here bumps on set — the real "did the main thread turn
+        # it into nametags" half only the real game can prove.
+        self.overlay_labels: list[dict] = []
+        self.overlay_applies = 0
 
     def reset_world(self) -> None:
         self.player = {"x": 0.0, "z": 0.0, "health": 48}  # 3 hearts
@@ -158,7 +164,7 @@ class FakeGame:
                 yaw_to_player = int((math.atan2(-dx, -dz) / math.pi) * 0x8000) & 0xFFFF
                 actors.append({
                     "id": ACTOR_EN_DEKUBABA, "cat": ACTORCAT_ENEMY, "params": 0,
-                    "pos": [b["x"], 0.0, b["z"]], "yaw": 0,
+                    "key": 0xBABA, "pos": [b["x"], 0.0, b["z"]], "yaw": 0,
                     "dist_xz": dist, "dist_y": 0.0,
                     "yaw_to_player": yaw_to_player,
                     "health": max(b["health"], 0), "targeted": False, "frozen": 0,
@@ -196,6 +202,35 @@ class FakeGame:
         del self.hud_ticker[:-128]
         return {}
 
+    def handle_overlay(self, payload: dict) -> dict:
+        sub = payload.get("sub", "set")
+        if sub == "get":
+            return {"labels": [dict(l) for l in self.overlay_labels],
+                    "applies": self.overlay_applies,
+                    "resolved": len(self.overlay_labels), "missing": 0}
+        if sub == "clear":
+            self.overlay_labels = []
+            self.overlay_applies += 1
+            return {}
+        if sub != "set":
+            return {"status": "failure", "error": f"unknown overlay sub {sub}"}
+        labels = payload.get("labels")
+        if not isinstance(labels, list) or len(labels) > 32:
+            return {"status": "failure",
+                    "error": "overlay requires 'labels' (at most 32)"}
+        for label in labels:
+            if (not isinstance(label, dict)
+                    or not isinstance(label.get("key"), int) or label["key"] < 0
+                    or not isinstance(label.get("text"), str)):
+                return {"status": "failure",
+                        "error": "each label needs an unsigned 'key' and string 'text'"}
+            color = label.get("color")
+            if color is not None and (not isinstance(color, list) or len(color) != 3):
+                return {"status": "failure", "error": "label 'color' must be [r, g, b]"}
+        self.overlay_labels = [dict(l) for l in labels]
+        self.overlay_applies += 1
+        return {"labels_staged": len(labels)}
+
     def handle(self, payload: dict) -> dict:
         res = {"type": "result", "id": payload.get("id"), "status": "success"}
         if payload.get("type") == "command":
@@ -227,6 +262,8 @@ class FakeGame:
                     res["error"] = "state slot empty"
         elif op == "hud":
             res.update(self.handle_hud(payload))
+        elif op == "overlay":
+            res.update(self.handle_overlay(payload))
         elif op == "pause":
             self.paused = bool(payload.get("on", True))
         elif op == "tick":

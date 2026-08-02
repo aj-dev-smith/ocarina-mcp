@@ -28,7 +28,13 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: verified against Shipwright's actor_table.h) and sprite-less actors
 #: (Player, En_Holl, Elf_Msg) dropped from spawn narration. Gap-fills
 #: inside the claimed frontier, no contract touch.
-OCARINA_VERSION = "0.3.0"
+#: 0.4.0: the debug overlay (second light's wrap item) — the runtime
+#: pushes floating world-space labels over actors showing the sensorium's
+#: beliefs (name, the digest's dist/above, the nearest_enemy slot-holder,
+#: novelty), rendered by the new `overlay` dojo op in the Shipwright
+#: patch. Human debug instrument, one-way by construction; no contract
+#: touch.
+OCARINA_VERSION = "0.4.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

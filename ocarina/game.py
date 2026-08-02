@@ -134,6 +134,28 @@ class Game:
     def hud_show(self, on: bool = True) -> dict:
         return self.link.request({"type": "dojo", "op": "hud", "sub": "show", "on": on})
 
+    def overlay_push(self, labels: list[dict]) -> dict:
+        """Push the debug overlay: floating world-space labels over actors.
+
+        Each label is {"key": <actor key from state>, "text": str,
+        "color": [r, g, b]}; a set REPLACES the whole label set, so a
+        label that stops being pushed disappears. The game resolves keys
+        against its live actor lists and skips (counts, not errors) any
+        that despawned since the snapshot. Human debug instrument only —
+        see overlay.py's one-way promise.
+        """
+        return self.link.request({"type": "dojo", "op": "overlay",
+                                  "sub": "set", "labels": labels})
+
+    def overlay_get(self) -> dict:
+        """Read the overlay store back. `applies` advances only when the
+        game's main thread turns a push into nametags — the op replying
+        success proves staging, not rendering (the HUD's `draws` rule)."""
+        return self.link.request({"type": "dojo", "op": "overlay", "sub": "get"})
+
+    def overlay_clear(self) -> dict:
+        return self.link.request({"type": "dojo", "op": "overlay", "sub": "clear"})
+
     def scan(self, rays: int = 24, length: float = 600.0, height: float = 26.0,
              from_yaw: Optional[int] = None, span: Optional[int] = None,
              origin: Optional[tuple] = None) -> list[dict]:

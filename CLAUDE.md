@@ -39,9 +39,12 @@ silently-never-fires transition shape, twice).
 - Module map: `machine.py` (parse + the five validation steps),
   `guards.py` (AST whitelist + `state.*` chains + ABSENT semantics),
   `senses.py` (the digest/schema/event grammar + OFFICIAL_NAMES and
-  NEVER_PRESENTED — THE growing curation artifact), `runtime.py` (20 Hz
-  loop, dispatch, edges, freeze-confirmed wakes), `executor.py` (+ the
-  blessed preemption extension), `server.py` (stdio MCP + channel push).
+  NEVER_PRESENTED — THE growing curation artifact), `overlay.py` (the
+  human debug overlay: sensorium beliefs as world-space labels, pushed by
+  the runtime to the Shipwright `overlay` op — one-way, never feeds the
+  sensorium), `runtime.py` (20 Hz loop, dispatch, edges, freeze-confirmed
+  wakes), `executor.py` (+ the blessed preemption extension),
+  `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
 ## State of play after second light (versions 0.2.0 → 0.3.0, all committed)
@@ -62,6 +65,18 @@ silently-never-fires transition shape, twice).
   names `fairy` (first light's unknown_0x0018 was Navi), `door`,
   `spider_web`, `bush`, `treasure_chest`; sprite-less actors (Player,
   En_Holl, Elf_Msg) dropped from spawn narration via NEVER_PRESENTED.
+- **0.4.0** — the debug overlay (second light's wrap item), built and
+  eyewitness-verified 2026-08-02: the runtime pushes world-space labels
+  over every actor ocarina can see (name/unknown, digest dist/above,
+  red NEAREST_ENEMY on the slot-holder, amber vocabulary gaps, novelty)
+  via a new `overlay` dojo op riding SoH's nametag system. One-way by
+  construction — labels render beliefs, never feed the sensorium. Three
+  visual-pass fixes landed the same day: per-label diffing + in-place
+  text rewrite (full re-register read as flicker), 10-unit display
+  quantization, and deferred vtx-buffer retirement in nametag.cpp (a
+  freed buffer still referenced by an in-flight display list rendered
+  one frame of garbage triangles — a latent stock-SoH race our update
+  rate made visible).
 
 **Top open items** (details in `../oot-dojo/harness-backlog.md`):
 `nearest_enemy` sight-gating — second light showed X-ray info *masks*

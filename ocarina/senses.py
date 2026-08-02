@@ -125,6 +125,16 @@ def check_path(path: tuple) -> str | None:
     return None
 
 
+def living_enemies(state: dict) -> list:
+    """The raw actors the digest counts as living enemies, and — via min
+    dist_xz — the one that holds the single `nearest_enemy` slot. Shared
+    with the debug overlay so its NEAREST marker can never diverge from
+    the slot the digest actually fills (the divergence would be a debug
+    instrument lying about the thing it exists to check)."""
+    return [a for a in (state.get("actors") or [])
+            if a.get("cat") == ACTORCAT_ENEMY and (a.get("health") or 0) > 0]
+
+
 def digest(state: dict) -> dict:
     """Raw DojoLink snapshot -> the curated digest guards and the mind see.
 
@@ -134,8 +144,7 @@ def digest(state: dict) -> dict:
     """
     player = state.get("player") or {}
     flags1 = player.get("state_flags1", 0)
-    enemies = [a for a in (state.get("actors") or [])
-               if a.get("cat") == ACTORCAT_ENEMY and (a.get("health") or 0) > 0]
+    enemies = living_enemies(state)
     out = {
         "scene": state.get("scene", -1),
         "hearts": state.get("health", 0) / 16.0,
@@ -198,6 +207,12 @@ class SeenKinds:
             self._seen = set(json.loads(self.path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             self._seen = set()
+
+    def known(self, kind: str) -> bool:
+        """Non-mutating peek: has `kind` been sighted this save file? The
+        debug overlay reads this without claiming a sighting — only a
+        narrated spawn (sight) may consume novelty."""
+        return kind in self._seen
 
     def sight(self, kind: str) -> bool:
         """True if this is the first sighting of `kind` this save file."""
