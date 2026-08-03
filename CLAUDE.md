@@ -3,20 +3,23 @@
 You are in the ocarina repo: the MCP server piece of OoT Bench.
 **`SURFACE.md` and `MACHINE.md` are BLESSED (AJ, 2026-08-01)** — the
 contract is in force, ratified-in-place clarifications included (see
-MACHINE.md's status block), and the server has flown **twice**, both on
-2026-08-01. First light (0.1.0) proved the server flies: boot via a
+MACHINE.md's status block), and the server has flown **three times**.
+First light (0.1.0, 2026-08-01) proved the server flies: boot via a
 behavior, geometry-sense wandering, the channel wake path, a live
-hot-swap. Second light (0.2.x–0.3.0) proved the **loop**: three wakes
-answered by a watching client, three brain surgeries mid-run, a
-dojo-graded killer ported import-lines-only (3 field kills, zero
-damage), the first mind-authored behavior, and AJ's fairness ruling
-live-editing the sensorium's obligations. Session records:
-`../oot-dojo/docs/20-first-light-2026-08-01.md` and
-`../oot-dojo/docs/21-second-light-2026-08-01.md`.
+hot-swap. Second light (0.2.x–0.3.0, same day) proved the **loop**:
+three wakes answered by a watching client, three brain surgeries
+mid-run, a dojo-graded killer ported import-lines-only (3 field kills,
+zero damage), the first mind-authored behavior, and AJ's fairness
+ruling live-editing the sensorium's obligations. The third flight
+(2026-08-02) was the sight-gating verification pass: 0.5.0's
+sighting-narrated world confirmed on sight in room 0. Session records:
+`../oot-dojo/docs/20-first-light-2026-08-01.md`, `docs/21-second-light-
+2026-08-01.md`, and `docs/22-sight-gating-2026-08-02.md` (design →
+ratification → verification, one file).
 
 **Read first:** `SURFACE.md` and `MACHINE.md`, then
 `../oot-dojo/docs/19-senses-and-the-machine-2026-07-31.md` (the substance)
-and docs/20 + docs/21 (what is built and what it did). The workshop's
+and docs/20 + docs/21 + docs/22 (what is built and what it did). The workshop's
 `../oot-dojo/CLAUDE.md` maps the validated internals these modules were
 ported from; its `docs/08-false-signals.md` discipline applies here
 fully — both flights caught its classics live (the dist_y sign; the
@@ -24,7 +27,7 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (92; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (113; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame).
 - Run: `python3 -m ocarina --repo <save-file-repo>` — the repo declares
   the machine under `machine/`; SoH connects in over Sail (43384; SoH's
@@ -47,7 +50,7 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play after second light (versions 0.2.0 → 0.3.0, all committed)
+## State of play after the third flight (versions 0.2.0 → 0.5.0, all committed)
 
 - **0.2.0** — the six pending judgment calls ratified into MACHINE.md
   (AJ delegating the ruling to the mind as the surface's primary user);
