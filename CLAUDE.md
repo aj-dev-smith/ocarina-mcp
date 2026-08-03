@@ -39,6 +39,11 @@ silently-never-fires transition shape, twice).
   MCP handshake, relays JSON commands from a FIFO, logs all traffic
   (wake packs included) to `traffic.jsonl`. It is how a Claude session
   plays the mind's role until real idle-channel delivery is exercised.
+  Flight convention (used for the third flight): copy drive.py AND a
+  copy of the save-file repo into a scratch flight dir side by side
+  (drive.py resolves the repo relative to itself) — never run an
+  `examples/` repo in place, or the live journal/seen-kinds mutate the
+  committed fossil.
 - Module map: `machine.py` (parse + the five validation steps),
   `guards.py` (AST whitelist + `state.*` chains + ABSENT semantics),
   `senses.py` (the digest/schema/event grammar + OFFICIAL_NAMES and
