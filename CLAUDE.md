@@ -3,7 +3,7 @@
 You are in the ocarina repo: the MCP server piece of OoT Bench.
 **`SURFACE.md` and `MACHINE.md` are BLESSED (AJ, 2026-08-01)** — the
 contract is in force, ratified-in-place clarifications included (see
-MACHINE.md's status block), and the server has flown **three times**.
+MACHINE.md's status block), and the server has flown **four times**.
 First light (0.1.0, 2026-08-01) proved the server flies: boot via a
 behavior, geometry-sense wandering, the channel wake path, a live
 hot-swap. Second light (0.2.x–0.3.0, same day) proved the **loop**:
@@ -12,10 +12,15 @@ mid-run, a dojo-graded killer ported import-lines-only (3 field kills,
 zero damage), the first mind-authored behavior, and AJ's fairness
 ruling live-editing the sensorium's obligations. The third flight
 (2026-08-02) was the sight-gating verification pass: 0.5.0's
-sighting-narrated world confirmed on sight in room 0. Session records:
+sighting-narrated world confirmed on sight in room 0. The fourth
+(2026-08-02 evening) was **the first flight with no rig in the middle** —
+ocarina registered as an MCP server in Claude Code, the mind playing
+through `mcp__ocarina__*` tool calls end to end — and it found the
+census cap that three verification passes had missed. Session records:
 `../oot-dojo/docs/20-first-light-2026-08-01.md`, `docs/21-second-light-
-2026-08-01.md`, and `docs/22-sight-gating-2026-08-02.md` (design →
-ratification → verification, one file).
+2026-08-01.md`, `docs/22-sight-gating-2026-08-02.md` (design →
+ratification → verification, one file), and
+`docs/23-fourth-flight-2026-08-02.md`.
 
 **Read first:** `SURFACE.md` and `MACHINE.md`, then
 `../oot-dojo/docs/19-senses-and-the-machine-2026-07-31.md` (the substance)
@@ -27,14 +32,24 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (113; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (120; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame).
 - Run: `python3 -m ocarina --repo <save-file-repo>` — the repo declares
   the machine under `machine/`; SoH connects in over Sail (43384; SoH's
   own config persists Sail enabled, so launching the game auto-connects).
-  `examples/first-light/` and `examples/second-light/` are working
-  save-file repos; second-light carries the seek→hunt clearing loop and
-  the session-fossil commentary.
+  `examples/first-light/`, `examples/second-light/` and
+  `examples/fourth-flight/` are working save-file repos; second-light
+  carries the seek→hunt clearing loop and the session-fossil commentary,
+  fourth-flight adds the looking organ, sight-honest seeking, the census
+  probe, and ocarina's first climb.
+- **Playing it directly (fourth flight, the current best way):** register
+  ocarina as an MCP server and drive it from a Claude Code session —
+  `claude mcp add ocarina --env PYTHONPATH=$PWD -- python3 -m ocarina
+  --repo <flight-dir>/<repo>`, then restart the session so the
+  `mcp__ocarina__*` tools appear. No FIFO, no drive.py. The mind reads
+  `oot://state` / `oot://events` and acts through the real tool surface.
+  A `tail -f` on the repo's `journal/mechanical.jsonl` (filtering the
+  `stand_watch` idle loop) is the live commentary channel.
 - `tools/drive.py` is the hand-drive rig: spawns the server, does the
   MCP handshake, relays JSON commands from a FIFO, logs all traffic
   (wake packs included) to `traffic.jsonl`. It is how a Claude session
@@ -55,7 +70,27 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play after the third flight (versions 0.2.0 → 0.5.0, all committed)
+## State of play after the fourth flight (versions 0.2.0 → 0.6.0, all committed)
+
+- **0.6.0** — CENSUS HONESTY + a budgeted overlay (fourth flight, dojo
+  docs/23). The instrument's census was capped at the **nearest 12
+  actors** — harmless until 0.5.0 moved the sensorium's spine onto it,
+  after which room 0 sent 12 of 29 actors with the wire stopping at ~310
+  units and live babas in plain sight never reached the sight predicate.
+  It was a RANK cap, so its radius shrank as clutter rose: walking
+  deeper into the room let bushes evict the enemies. AJ's ruling — the
+  wire carries the torrent, curation happens upstairs where the fairness
+  rules can see it — put `kMaxActors` at 256 (above OoT's own
+  ACTOR_NUMBER_MAX; a runaway guard, not a budget). **Requires a
+  Shipwright built after 2026-08-02**; an older one is diagnosed loudly,
+  never silently obeyed. Ocarina-side: `senses.census_truncated()` + a
+  per-scene runtime diagnostic (the wire always sent
+  `actor_count_total`; nothing read it). The overlay now RANKS labels
+  (slot-holder → living enemies → vocabulary gaps → distance) and cuts
+  to the game side's hard 32-label limit, pairing every push with
+  `overlay.boundary()` on the HUD. Flight lesson, generalised: **a debug
+  layer must show the BOUNDARY of what it received, not only the
+  contents.**
 
 - **0.2.0** — the six pending judgment calls ratified into MACHINE.md
   (AJ delegating the ruling to the mind as the surface's primary user);
@@ -106,16 +141,43 @@ silently-never-fires transition shape, twice).
   rate made visible).
 
 **Top open items** (details in `../oot-dojo/harness-backlog.md`):
-the `bgm_change` producer (enemy battle music on proximity — the
-game's own fair unseen-enemy channel, and the compensation for losing
-X-ray proximity info) is the next sense; the example machine's removed
-`overhead-lurker` reflex is now rebuildable per its own in-file
-condition; attacker
-identity on `damage_taken` (needs a wire-side patch; nearest-enemy-at-
-freeze is the documented workaround); Object_Kankyo filter; En_Item00
-param-aware naming; the absence-semantics foot-gun lint (deferred);
-dojo-trial `approach_baba_v1` (UNGRADED — its walking leg never ran);
-dialogue text onto the wire.
+
+1. **THE PLACE SENSE** — promoted to the top by the fourth flight, which
+   could not open a chest sitting +360 above Link. Room 0 is a vertical
+   shaft; every door is above or below; only bushes share Link's floor.
+   `scan` is a **horizontal** fan at fixed height and never looks down,
+   and ladders/vines are collision surfaces rather than actors, so no
+   census at any cap can contain them. The digest says nothing about
+   where the player *is*. In cost order: a **`fell` event** first (nearly
+   free — `player.pos.y` is already on the wire, and three failures were
+   invisible because falling is silent); then a **floor fan** (cast DOWN
+   at a ring of bearings, report floor height or no-floor — a new `sub`
+   on the existing `scan` op, not new physics); then the narration
+   curation; plus a behaviour rule: never call a camera-relative
+   movement helper while `player.on_wall`/`player.climbing` (violating
+   it is what made Link climb down into a wall).
+2. `bgm_change` producer (enemy battle music on proximity — the game's
+   own fair unseen-enemy channel, and the compensation for losing X-ray
+   proximity info).
+3. Actor **bearings** in the digest: it carries dist and above but no
+   direction, so "a baba at 490" cannot be walked toward by a mind, only
+   by a body re-reading the raw census.
+4. **Sight-gating for behaviours, not just narration.** `game.actors()`
+   is raw; sight-gating governs what the MIND is told, not what the
+   HANDS reach for. `examples/fourth-flight/machine/behaviors/seek.py`
+   filters on the wire's `sighted` bit by hand — that discipline wants
+   to live in the surface, not in each body.
+
+Then: the removed `overhead-lurker` reflex is rebuildable per its own
+in-file condition; attacker identity on `damage_taken` (needs a
+wire-side patch; nearest-enemy-at-freeze is the documented workaround);
+Object_Kankyo filter; En_Item00 param-aware naming; the
+absence-semantics foot-gun lint (deferred); dojo-trial
+`approach_baba_v1`/`v2` and `climb_ladder_v1` (all UNGRADED); dialogue
+text onto the wire. Still unexercised: **real idle-session channel
+delivery** — the fourth flight drove synchronously and read wakes from
+the journal, so a wake pack has still never woken an idle Claude
+session on its own.
 
 ## Rules for this repo
 

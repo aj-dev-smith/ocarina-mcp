@@ -15,10 +15,16 @@ nothing in this module may write into senses, and the game-side op it
 feeds (DojoOverlay.cpp) renders text without interpreting it.
 
 Label truthfulness notes:
-- Labels cover exactly the actors the state op reports (the nearest 12
-  across the census categories) minus NEVER_PRESENTED ids — an actor with
-  no label is an actor ocarina cannot currently see, which is itself
-  information.
+- Labels cover the actors the state op reports, minus NEVER_PRESENTED
+  ids, ranked by debug interest and cut to LABEL_BUDGET — an actor with
+  no label is an actor ocarina cannot currently see OR one the budget
+  dropped, and `boundary()` exists so those two are never confused.
+  THE BUDGET IS THE POINT OF THAT FUNCTION: the fourth flight's bug was
+  a silent cap (the wire's nearest-12) reading as a complete world, and
+  a debug layer that quietly caps its own labels reproduces that bug
+  inside the very instrument built to catch it. The principle earned
+  there: a debug layer must show the BOUNDARY of what it received, not
+  only the contents.
 - `dist`/`above` use the digest's own arithmetic (the dist_y negation
   included), via the same helpers, so the label can never disagree with
   the narration.
@@ -34,8 +40,16 @@ Label truthfulness notes:
 
 from __future__ import annotations
 
+from .protocol import ACTORCAT_ENEMY
 from .senses import (NEVER_PRESENTED, OFFICIAL_NAMES, SeenKinds, Sightings,
-                     actor_name, nearest_enemy_slot)
+                     actor_name, census_truncated, nearest_enemy_slot)
+
+#: The game side (DojoOverlay.cpp) REJECTS a push carrying more than 32
+#: labels outright, so this is a hard wire limit, not a taste call. With
+#: the census cap lifted to 256 an ordinary room can exceed it easily —
+#: hence ranking (see _rank) rather than the census order, which would
+#: hand the whole budget to whatever scenery stands nearest.
+LABEL_BUDGET = 32
 
 #: Colors are semantics, so they live here, not in C++: red marks the
 #: single `nearest_enemy` slot-holder, amber marks a vocabulary gap
@@ -49,13 +63,71 @@ COLOR_UNSIGHTED = [140, 140, 140]
 COLOR_NAMED = [240, 240, 240]
 
 
+def _rank(a: dict, nearest_key, named: bool) -> tuple:
+    """Sort key: what a human debugging the sensorium most needs to see.
+
+    Distance alone is the wrong axis — it is exactly what the wire's old
+    nearest-12 cap used, and it spends the whole budget on the bushes at
+    your feet while the enemy across the room goes unlabelled. Tiers:
+
+      0  the `nearest_enemy` slot-holder — the single most bug-prone
+         belief ocarina holds (second light's masking finding lived here)
+      1  living enemies — the population the digest's enemy fields draw
+         from, so a wrong label here is a wrong narration
+      2  vocabulary gaps — unknown_0x____ is an instrument to-do, and
+         seeing one is how it gets named
+      3  everything else, nearest first
+    """
+    if a.get("key") == nearest_key:
+        tier = 0
+    elif a.get("cat") == ACTORCAT_ENEMY and (a.get("health") or 0) > 0:
+        tier = 1
+    elif not named:
+        tier = 2
+    else:
+        tier = 3
+    return (tier, float(a.get("dist_xz", 0.0)))
+
+
+def boundary(state: dict, shown: int) -> list[list[str]]:
+    """HUD fields describing what the overlay is NOT showing: labels
+    drawn vs presentable, and whether the wire itself truncated.
+
+    Without this, a missing label has two meanings — "ocarina cannot see
+    it" and "the budget ran out" — and the first is a bug report while
+    the second is noise. Rendering the boundary keeps the overlay's
+    central promise ("no label = ocarina can't see it") honest under a
+    cap. Ordered pairs: the HUD renders them in the order given.
+    """
+    actors = [a for a in (state.get("actors") or [])
+              if a.get("key") is not None and a.get("id", -1) not in NEVER_PRESENTED]
+    total = state.get("actor_count_total")
+    dropped = len(actors) - shown
+    fields = [["labels", f"{shown}/{len(actors)}"
+                         + (f"  ({dropped} over budget)" if dropped > 0 else "")]]
+    if total is not None:
+        census = state.get("actors") or []
+        fields.append(["census", f"{len(census)}/{total} on wire"])
+    trunc = census_truncated(state)
+    if trunc is not None:
+        far = max((a.get("dist_xz", 0.0) for a in state.get("actors") or []),
+                  default=0.0)
+        # Loud on purpose: this is the state in which every other number
+        # on screen is describing a partial world.
+        fields.append(["TRUNCATED", f"wire stops at {far:.0f} units"])
+    return fields
+
+
 def labels(state: dict, seen: SeenKinds, sightings: Sightings) -> list[dict]:
     """Raw DojoLink snapshot -> the overlay label set (wire shape for the
     `overlay` op: key/text/color per label; a set replaces the whole set).
+
+    Cut to LABEL_BUDGET by _rank. Pair every push with boundary() so the
+    cut is visible rather than silent.
     """
     nearest_key = (nearest_enemy_slot(state, sightings) or {}).get("key")
 
-    out = []
+    scored = []
     for a in state.get("actors") or []:
         actor_id = a.get("id", -1)
         key = a.get("key")
@@ -86,5 +158,7 @@ def labels(state: dict, seen: SeenKinds, sightings: Sightings) -> list[dict]:
             color = COLOR_UNKNOWN
         else:
             color = COLOR_NAMED
-        out.append({"key": key, "text": "\n".join(lines), "color": color})
-    return out
+        scored.append((_rank(a, nearest_key, actor_id in OFFICIAL_NAMES),
+                       {"key": key, "text": "\n".join(lines), "color": color}))
+    scored.sort(key=lambda pair: pair[0])
+    return [label for _, label in scored[:LABEL_BUDGET]]

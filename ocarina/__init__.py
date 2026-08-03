@@ -53,7 +53,27 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: renders never-sighted census actors grey `unsighted`. Retires 0.4.1's
 #: interim vertical bound. An old instrument without the bits reads as
 #: blind, loudly diagnosed — never silently X-ray.
-OCARINA_VERSION = "0.5.0"
+#: 0.6.0: CENSUS HONESTY + a budgeted overlay (fourth flight, dojo
+#: docs/23; AJ's ruling 2026-08-02 — "raise it VERY high... it's up to
+#: YOU to design the machine in a way that works off the information
+#: that you need"). The instrument's census was capped at the nearest 12
+#: actors, invisible until 0.5.0 moved the sensorium's spine onto it: in
+#: Deku Tree room 0 that sent 12 of 29 with the wire stopping at ~310
+#: units, so live babas in plain view never reached the sight predicate,
+#: and because it was a RANK cap its radius SHRANK as clutter rose
+#: (walking in let bushes evict the enemies). Instrument-side the cap is
+#: now 256, above OoT's own ACTOR_NUMBER_MAX — a runaway guard, not a
+#: budget; curation belongs upstairs where the fairness rules can see it.
+#: Ocarina-side: senses.census_truncated() + a per-scene runtime
+#: diagnostic, so a partial world can never again read as a whole one
+#: (the wire always sent actor_count_total; nothing read it). The debug
+#: overlay now RANKS labels — nearest_enemy slot-holder, living enemies,
+#: vocabulary gaps, then distance — and cuts to the game side's hard
+#: 32-label limit, pairing every push with overlay.boundary() on the HUD
+#: so a missing label never silently means "budget exceeded". That last
+#: part is the flight's general lesson: a debug layer must show the
+#: BOUNDARY of what it received, not only the contents. No contract touch.
+OCARINA_VERSION = "0.6.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

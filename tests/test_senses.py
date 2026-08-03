@@ -154,6 +154,20 @@ class TestInstrumentHonesty(unittest.TestCase):
         new_wire = {"actors": [{"id": 0x0055, "key": 1, "sighted": False}]}
         self.assertIs(senses.census_carries_sight(new_wire), True)
 
+    def test_census_truncation_detection(self):
+        # The fourth flight's bug: 12 of 29 actors on the wire read as a
+        # complete world because nothing compared the two numbers.
+        self.assertIsNone(senses.census_truncated({"actors": [{}], "actor_count_total": 1}))
+        self.assertEqual(senses.census_truncated({"actors": [{}] * 12,
+                                                  "actor_count_total": 29}),
+                         (12, 29))
+
+    def test_census_truncation_unknown_without_a_total(self):
+        # An instrument that never reports a total cannot be judged — say
+        # nothing rather than claim completeness (docs/08: the confident
+        # wrong answer is worse than the absent one).
+        self.assertIsNone(senses.census_truncated({"actors": [{}] * 12}))
+
 
 if __name__ == "__main__":
     unittest.main()

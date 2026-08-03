@@ -25,7 +25,10 @@ def enemy(key, actor_id=0x0055, dist=100.0, dist_y=0.0, health=2,
             "dist_y": dist_y, "health": health, "sighted": sighted}
 
 
-class LabelCase(unittest.TestCase):
+class _LabelFixture(unittest.TestCase):
+    """Fixture only — no tests here, so subclassing it does not re-run
+    another class's suite."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.seen = SeenKinds(Path(self.tmp) / "seen.json")
@@ -39,6 +42,8 @@ class LabelCase(unittest.TestCase):
         self.sightings.observe(state)
         return overlay.labels(state, self.seen, self.sightings)
 
+
+class LabelCase(_LabelFixture):
     def test_never_presented_actors_get_no_label(self):
         # A label on a thing AJ can't see would be the overlay committing
         # the exact leak it exists to catch.
@@ -119,6 +124,65 @@ class LabelCase(unittest.TestCase):
             self.assertIsInstance(label["key"], int)
             self.assertIsInstance(label["text"], str)
             self.assertEqual(len(label["color"]), 3)
+
+
+class TestLabelBudget(_LabelFixture):
+    """The wire cap is gone (256), so a crowded room can present more
+    actors than the game side will accept (32). What gets cut, and
+    whether the cut is visible, is the whole lesson of the fourth
+    flight."""
+
+    def test_budget_is_never_exceeded(self):
+        # The game side REJECTS an oversized push, so busting the budget
+        # costs the entire overlay, not just the extra labels.
+        crowd = [enemy(k, actor_id=0x0095, dist=float(k), cat=ACTORCAT_PROP,
+                       health=0) for k in range(1, 80)]
+        self.assertEqual(len(self.labels(*crowd)), overlay.LABEL_BUDGET)
+
+    def test_enemies_outrank_nearer_scenery(self):
+        # The exact failure being fixed: bushes at your feet must not
+        # evict the enemy across the room. Scenery fills the budget and
+        # the one distant enemy still gets a label.
+        crowd = [enemy(k, actor_id=0x0095, dist=float(k), cat=ACTORCAT_PROP,
+                       health=0) for k in range(1, 80)]
+        far_baba = enemy(999, actor_id=0x0055, dist=700.0)
+        out = self.labels(*(crowd + [far_baba]))
+        keys = [l["key"] for l in out]
+        self.assertIn(999, keys)
+        # And it outranks everything: it holds the nearest_enemy slot.
+        self.assertEqual(keys[0], 999)
+        self.assertIn("NEAREST_ENEMY", out[0]["text"])
+
+    def test_vocabulary_gaps_outrank_named_scenery(self):
+        # An unknown_0x____ is an instrument to-do; seeing one is how it
+        # gets named, so it must survive a crowded room.
+        crowd = [enemy(k, actor_id=0x0095, dist=float(k), cat=ACTORCAT_PROP,
+                       health=0) for k in range(1, 80)]
+        mystery = enemy(999, actor_id=0x0AAA, dist=900.0, cat=ACTORCAT_PROP,
+                        health=0)
+        keys = [l["key"] for l in self.labels(*(crowd + [mystery]))]
+        self.assertIn(999, keys)
+
+    def test_boundary_reports_what_the_budget_dropped(self):
+        crowd = [enemy(k, actor_id=0x0095, dist=float(k), cat=ACTORCAT_PROP,
+                       health=0) for k in range(1, 80)]
+        state = {"save_loaded": True, "scene": 85, "actors": crowd,
+                 "actor_count_total": 79}
+        shown = len(overlay.labels(state, self.seen, self.sightings))
+        fields = dict((k, v) for k, v in overlay.boundary(state, shown))
+        self.assertEqual(fields["labels"], "32/79  (47 over budget)")
+        self.assertEqual(fields["census"], "79/79 on wire")
+        self.assertNotIn("TRUNCATED", fields)
+
+    def test_boundary_shouts_when_the_wire_itself_truncated(self):
+        # The state the fourth flight was actually in, and could not see.
+        state = {"save_loaded": True, "scene": 0,
+                 "actors": [enemy(k, dist=float(k) * 25) for k in range(1, 13)],
+                 "actor_count_total": 29}
+        fields = dict((k, v) for k, v in overlay.boundary(state, 12))
+        self.assertEqual(fields["census"], "12/29 on wire")
+        self.assertIn("TRUNCATED", fields)
+        self.assertIn("300", fields["TRUNCATED"])
 
 
 class TestRuntimePush(RuntimeCase):

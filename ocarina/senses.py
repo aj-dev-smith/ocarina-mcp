@@ -223,6 +223,28 @@ def census_carries_sight(state: dict):
     return any("sighted" in a for a in actors)
 
 
+def census_truncated(state: dict):
+    """`(sent, total)` when the wire dropped actors from this snapshot's
+    census, else None (None also when the instrument reports no total).
+
+    The wire sends `actor_count_total` alongside a nearest-first census.
+    Until 2026-08-02 nothing read it, so a capped census was
+    indistinguishable from a complete world — and it was capped at 12,
+    which in an ordinary room meant live enemies the player was looking
+    straight at never reached the sight predicate (fourth flight; the
+    cap is now a runaway guard at 256). That silence is the docs/08
+    false signal in its purest form: absence of evidence rendered as
+    evidence of absence. The runtime turns a truthy answer here into a
+    loud diagnostic, the same way a census without `sighted` bits reads
+    as blind-and-saying-so rather than quietly X-ray.
+    """
+    actors = state.get("actors")
+    total = state.get("actor_count_total")
+    if actors is None or total is None:
+        return None
+    return (len(actors), total) if total > len(actors) else None
+
+
 def in_view_enemies(state: dict, sightings: Sightings) -> list:
     """Living enemies the player has sighted (ever, this scene) — the
     population behind both the `enemies` count and the `nearest_enemy`

@@ -89,6 +89,7 @@ class MachineRuntime:
         self.seen = senses.SeenKinds(self.repo / ".ocarina" / "seen_kinds.json")
         self.sightings = senses.Sightings()
         self._sight_warned = False
+        self._truncation_warned_scene = object()   # sentinel: no scene judged yet
 
         self._lock = threading.RLock()
         self._cooldowns: dict = {}      # transition name -> monotonic last-match
@@ -228,6 +229,15 @@ class MachineRuntime:
             return
         try:
             self.game.overlay_push(labels)
+            # The boundary rides with every push: what the labels do NOT
+            # cover is as much a debug fact as what they do (overlay.py).
+            # Best-effort and separate — a HUD failure must never cost the
+            # labels, which are the primary instrument.
+            try:
+                self.game.hud_push(panels={"dojo": overlay.boundary(
+                    self._last_state, len(labels))})
+            except LinkError:
+                pass
         except LinkError:
             return
         self._overlay_last = labels
@@ -290,6 +300,23 @@ class MachineRuntime:
                                   "instrument predates sight-gating (rebuild SoH "
                                   "with the current dojo patch); world senses are "
                                   "BLIND, deliberately, rather than X-ray"})
+        # A truncated census means the world senses are working from a
+        # partial world — say so, per scene, with the numbers. Per scene
+        # rather than once per session because each room is its own
+        # judgment: a cap that never bit in a corridor can bite hard in a
+        # crowded hall, and one early warning must not buy silence for
+        # the rest of the session.
+        truncated = senses.census_truncated(st)
+        if truncated is not None and st.get("scene") != self._truncation_warned_scene:
+            self._truncation_warned_scene = st.get("scene")
+            sent, total = truncated
+            self._record({"event": "diagnostic",
+                          "text": f"census TRUNCATED: {sent} of {total} actors "
+                                  f"on the wire (farthest sent "
+                                  f"{max((a.get('dist_xz', 0.0) for a in st.get('actors') or []), default=0.0):.0f}) "
+                                  f"— the world senses are judging a partial "
+                                  f"world, and anything beyond that radius "
+                                  f"cannot be sighted, counted or narrated"})
         for ev in senses.spawn_events(self.sightings.observe(st), self.seen):
             self._record(ev)
             self._dispatch(ev)
