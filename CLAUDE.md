@@ -3,7 +3,7 @@
 You are in the ocarina repo: the MCP server piece of OoT Bench.
 **`SURFACE.md` and `MACHINE.md` are BLESSED (AJ, 2026-08-01)** — the
 contract is in force, ratified-in-place clarifications included (see
-MACHINE.md's status block), and the server has flown **five times**.
+MACHINE.md's status block), and the server has flown **six times**.
 First light (0.1.0, 2026-08-01) proved the server flies: boot via a
 behavior, geometry-sense wandering, the channel wake path, a live
 hot-swap. Second light (0.2.x–0.3.0, same day) proved the **loop**:
@@ -21,13 +21,22 @@ census cap that three verification passes had missed. The fifth
 graph distilled offline from the scene's collision mesh (`lab/navgraph/`,
 built the same afternoon from a design conversation with AJ), compiled
 into waypoints, flown to the exact chest the fourth flight failed three
-ways to reach — and the chest opened. Session records:
+ways to reach — and the chest opened. The sixth (2026-08-04) was the
+**place-sense acceptance flight** (0.7.0 → 0.7.1): the first mission
+ordered entirely in region-graph names, the first mid-flight patches to
+the server itself (three traverse fixes no test had caught), and the
+bench's **first death** — the vine guards a probe measured as
+stationary were sleeping patrols, and Link died parked at 0.5 hearts
+inside one's wake-up radius. 3F remains unreached; the mission is open.
+Session records:
 `../oot-dojo/docs/20-first-light-2026-08-01.md`, `docs/21-second-light-
 2026-08-01.md`, `docs/22-sight-gating-2026-08-02.md` (design →
 ratification → verification, one file), `docs/23-fourth-flight-
-2026-08-02.md`, and `docs/24-fifth-flight-2026-08-03.md` (the nav design
+2026-08-02.md`, `docs/24-fifth-flight-2026-08-03.md` (the nav design
 conversation + the lab + the flight, one file — read it before touching
-anything navigation-shaped).
+anything navigation-shaped), `docs/25-the-place-sense-2026-08-03.md`
+(the ratified design), and `docs/26-sixth-flight-2026-08-04.md` (the
+acceptance flight — read it before touching traverse).
 
 **Read first:** `SURFACE.md` and `MACHINE.md`, then
 `../oot-dojo/docs/19-senses-and-the-machine-2026-07-31.md` (the substance)
@@ -39,18 +48,25 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (120; includes a
-  subprocess-over-real-pipes smoke test with the ported fakegame).
-- Run: `python3 -m ocarina --repo <save-file-repo>` — the repo declares
-  the machine under `machine/`; SoH connects in over Sail (43384; SoH's
+- Tests: `python3 -m unittest discover -s tests -t .` (164; includes a
+  subprocess-over-real-pipes smoke test with the ported fakegame, and
+  real-o2r place-sense pins that skip if oot.o2r is absent).
+- Run: `python3 -m ocarina --repo <save-file-repo> --o2r
+  /Users/aj/Code/Shipwright/oot.o2r` — without `--o2r` the place sense
+  is off (loud diagnostic, `place.*` absent, traverse refuses). The
+  repo declares the machine under `machine/`; SoH connects in over Sail (43384; SoH's
   own config persists Sail enabled, so launching the game auto-connects).
   `examples/first-light/`, `examples/second-light/`,
-  `examples/fourth-flight/` and `examples/fifth-flight/` are working
-  save-file repos; second-light carries the seek→hunt clearing loop and
-  the session-fossil commentary, fourth-flight adds the looking organ,
-  sight-honest seeking, the census probe, and ocarina's first climb;
-  fifth-flight (the same repo, kept playing) adds the navgraph-steered
-  bodies, the locate probe, and the journal of both MCP-direct flights.
+  `examples/fourth-flight/`, `examples/fifth-flight/` and
+  `examples/sixth-flight/` are working save-file repos; second-light
+  carries the seek→hunt clearing loop and the session-fossil
+  commentary, fourth-flight adds the looking organ, sight-honest
+  seeking, the census probe, and ocarina's first climb; fifth-flight
+  (the same repo, kept playing) adds the navgraph-steered bodies, the
+  locate probe, and the journal of both MCP-direct flights;
+  sixth-flight (still the same line) adds the place-flight bodies
+  (refusal probe, spider probe, ascend_to_3f v1→v5 with post-mortems
+  in-file) and the acceptance flight's full journal, death included.
 - **`lab/navgraph/`** — the place-sense feasibility lab (2026-08-03,
   fifth flight): stdlib pipeline that parses scene collision out of
   SoH's `oot.o2r`, flood-fills it into a region graph with typed climb
@@ -87,7 +103,56 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play after the fifth flight (server at 0.6.0; the lab unblessed)
+## State of play after the sixth flight (server at 0.7.1; the place sense ACCEPTED)
+
+- **0.7.1 + THE SIXTH FLIGHT (2026-08-04, dojo docs/26 — the
+  acceptance flight, flown the morning after 0.7.0 was built).** The
+  place sense passed every acceptance check on first exercise
+  (distiller diagnostic, region_entered narration, exact self-pose,
+  first live bearing, oot://place, all three refusal classes held with
+  measured zero movement) — and then the mission (3F by named legs)
+  found three traverse bugs 164 tests had not, all fixed SERVER-side
+  mid-flight (two /mcp restarts, a first): (1) a modal message box
+  freezes the pad — traverse now fails fast naming it (dialogue text is
+  now a MOTOR gap); (2) actors are not in the collision mesh — a
+  mesh-clean route can wedge on a chest; wedged ~3 s now triggers a
+  mesh-checked sidestep, distinct from the honest 20 s stall; (3) a
+  curved climb sheet's centroid "at" hung beside that chest over a real
+  gap in the vines — distill now keeps floor-touching BASE SEGMENTS and
+  resolve_traverse aims grabs at them (generated maps need motor-grade
+  grain, not just topology). The mission was NOT completed: the spider
+  probe's "stationary" vine guards were SLEEPING patrols (activation
+  distance — a 15 s envelope from a floor below is an artifact), and
+  the run ended in the bench's FIRST DEATH, parked at 0.5 hearts inside
+  a guard's wake-up radius. Zero material cost (game-native save, no
+  items held; world reset to the boot save); the lesson priced in
+  docs/26. Behavior patterns worth keeping: region-aware leg skipping
+  (v2 — retry-safety means routing from where you ARE) and probes that
+  ride BehaviorAbort detail into wakes (spider_probe). **Next session
+  opens with the heal-loop conversation (docs/26 felt-gap #1) and the
+  3F mission still open.**
+
+- **0.7.0 — THE PLACE SENSE (2026-08-03, dojo docs/25: drafted,
+  ratified by AJ, and BUILT in one session; contract bump — both
+  SURFACE.md and MACHINE.md amended).** The lab pipeline ported
+  (`collision.py`/`navgraph.py`/`place.py`) with DETERMINISTIC
+  geometry-derived names (`ydan:r@30,0,70`; pinned in
+  `lab/navgraph/test_ring.py` test 3). Digest grows `place.*` (region,
+  on_mesh, exact self-pose under the ratified self-vs-others fairness
+  line) and `nearest_enemy.bearing` (clock-face; NO wire patch was
+  needed — the wire carried actor pos since first light, the gap was
+  curation). New `place` event category (region_entered, fell),
+  `oot://place` (judgments over names, no coordinates; v0 whole-scene
+  reveal is a FLAGGED honesty gap — the blessed grain is the game's
+  minimap and needs region→room membership), and `game.traverse()`:
+  ONE named leg, all refusals BEFORE movement (off-mesh, candidates,
+  non-adjacent; descent/crawl are honest not-yets), map-verified
+  arrival, mid-op preemption polling. Cross-region routing stays the
+  MIND's, by ruling. Mind-side distillation of game data is now
+  CONTRABAND in scored play (lab = dev tooling, like savestates); the
+  server needs `--o2r <path to SoH's oot.o2r>` or the place sense is
+  off, loudly. **Flown and ACCEPTED the next morning — see the 0.7.1
+  entry above and dojo docs/26.**
 
 - **THE FIFTH FLIGHT (2026-08-03, dojo docs/24; no version bump — the
   server ran stock 0.6.0 throughout).** A design conversation on
@@ -181,59 +246,55 @@ silently-never-fires transition shape, twice).
   rate made visible).
 
 **Top open items** (details in `../oot-dojo/harness-backlog.md`; the
-fifth flight re-ranked this list with field evidence):
+sixth flight re-ranked this list by felt pain — docs/26 has the
+reasoning):
 
-1. **THE PLACE SENSE — now design-ready.** The fourth flight raised it;
-   the fifth flight PROVED the shape in the lab and flew it: region
-   graph generated from collision data, `place.*` digest section,
-   `oot://place`, a `goto` service that **refuses off-mesh targets by
-   construction** (v6 hardcoded a staging point past the walkway's inner
-   edge and Link auto-jumped into the void — validation must be a
-   service, not a discipline), and the `fell` event (walk_ring_v1
-   carries the hand-rolled ancestor: an expected-height table). Write
-   the design doc, get AJ's blessing, then promote the lab. The floor
-   fan survives as the ground-truth probe that verifies graph beliefs,
-   not as the primary survey instrument.
-2. **Actor bearings in the digest** — promoted by cost: the fifth flight
-   worked around the gap by trilateration (three census distances from
-   three known positions; fixed the chest 5 units off its actor-entry
-   truth) and it cost three behavior versions. Bearings would have cost
-   zero.
-3. **Prop pose/facing + interaction affordances — new, from the chest
-   saga.** A sighted player sees which way a chest faces (the latch) and
-   whether the A-icon reads "Open"; ocarina carries neither, and both
-   took AJ's eyes to resolve live. Learned and recorded: **En_Box front
-   = rot_y + 0x8000** (navgraph.py). The A-icon's action text is
-   presented truth (the UI principle) and belongs on the wire. Related:
-   **fine motor** — movement primitives need speed as a first-class
-   parameter (the body had two gaits, sprint and stop; analog magnitude
-   32 is what finally opened the chest) — and **screenshot as
-   escalation** earned its rank (two of AJ's screenshots resolved in
-   seconds what probes argued about for minutes).
-4. `bgm_change` producer (enemy battle music on proximity — the game's
-   own fair unseen-enemy channel; the boulder-maze walkthrough in the
-   docs/24 conversation also promotes the sfx producer generally:
-   rumble trend is how a hearing player navigates occluded hazards).
-5. **Sight-gating for behaviours, not just narration.** `game.actors()`
-   is raw; sight-gating governs what the MIND is told, not what the
-   HANDS reach for. `examples/fourth-flight/machine/behaviors/seek.py`
-   filters on the wire's `sighted` bit by hand — that discipline wants
-   to live in the surface, not in each body.
+1. **A HEAL LOOP.** Recovery hearts exist (baba kills, bushes) but no
+   body can safely farm them at low health — which is exactly when it
+   matters. The first death was downstream of this gap. Next session
+   opens here.
+2. **Descent.** `traverse` rightly refuses climbing down, but the
+   refusal left Link COMMITTED to the ring with no path back but
+   falling — a one-way map is a trap the mind walks into knowingly.
+   Descending grabs need their own sequence (docs/25's honest not-yet,
+   now with a body count).
+3. **Enemy activation state in the census.** The spider probe measured
+   three vine guards as stationary over 30 samples — they were ASLEEP
+   (activation distance), and one of them killed Link. A sighted player
+   sees a skullwalltula start to move; the census carries positions but
+   not awake/asleep, and that gap manufactured a false belief with
+   fatal consequences.
+4. **Obstacle-aware ascend** — promote the sixth flight's retired
+   spider-slalom (in `examples/sixth-flight/.../place_flight.py`) into
+   traverse; straight-up is not enough on guarded walls. Related: the
+   slingshot answer (kill the guard) compounds with `save_game`'s
+   NOT_YET — the fifth flight's slingshot chest died unsaved with its
+   process, and every session since has paid for it.
+5. **Dialogue text on the wire — now MOTOR-blocking.** A message box
+   freezes the pad (0.7.1 fails fast, but blind); Navi's lecture cost a
+   leg. The fifth flight advanced a get-item box blind; the sixth flew
+   a whole leg into one.
+6. **Screenshot on the wire.** Two AJ screenshots resolved in seconds
+   what probes argued about for minutes (the chest at the vine base;
+   the gap in the vines) — third flight running in which eyes were the
+   decisive instrument.
+7. `bgm_change` producer (enemy battle music on proximity — the game's
+   own fair unseen-enemy channel), and **sight-gating for behaviours**
+   (`game.actors()` is raw; seek.py filters the `sighted` bit by hand —
+   that discipline wants to live in the surface).
 
-Then: the removed `overhead-lurker` reflex is rebuildable per its own
-in-file condition; attacker identity on `damage_taken` (needs a
-wire-side patch; nearest-enemy-at-freeze is the documented workaround);
-Object_Kankyo filter; En_Item00 param-aware naming; the
-absence-semantics foot-gun lint (deferred); dojo-trial
-`approach_baba_v1`/`v2`, `climb_ladder_v1`, and now the whole
-fifth-flight navgraph family (all UNGRADED); dialogue text onto the
-wire (the fifth flight advanced the get-item box BLIND — three
-`dialogue_advance` calls without reading a word); `save_game`'s NOT_YET
-was hit live (the opened chest died with the process — pause-menu
-navigation is now a felt gap, not a listed one). Still unexercised:
-**real idle-session channel delivery** — flights four and five drove
-synchronously and read wakes from the journal, so a wake pack has still
-never woken an idle Claude session on its own.
+Then: prop pose/facing + affordance text (En_Box front = rot_y +
+0x8000; the A-icon's action text is presented truth); the removed
+`overhead-lurker` reflex is rebuildable per its own in-file condition;
+attacker identity on `damage_taken` (needs a wire-side patch;
+nearest-enemy-at-freeze is the documented workaround); Object_Kankyo
+filter; En_Item00 param-aware naming; the absence-semantics foot-gun
+lint (deferred); dojo-trial `approach_baba_v1`/`v2`, `climb_ladder_v1`,
+the fifth-flight navgraph family, and now the sixth-flight place-flight
+family (all UNGRADED). Still unexercised: **real idle-session channel
+delivery** — flights four through six drove synchronously and read
+wakes from the journal, so a wake pack has still never woken an idle
+Claude session on its own.
 
 ## Rules for this repo
 
