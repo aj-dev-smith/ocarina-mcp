@@ -128,6 +128,10 @@ class BehaviorExecutor:
         self.events = []
         self._preempt_flag.clear()
         self._preempt_reason = []
+        # Long composites (traverse) poll these so preemption lands
+        # mid-op — the wrapper below only checks at call boundaries.
+        game._preempt_event = self._preempt_flag
+        game._preempt_reason = self._preempt_reason
         self._started_at = time.monotonic()
         wrapped = _PreemptableGame(game, self._preempt_flag, self._preempt_reason)
         self._thread = threading.Thread(

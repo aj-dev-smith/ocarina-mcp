@@ -7,6 +7,12 @@ context). This file and `MACHINE.md` are the contract; tool code
 implements them exactly. A change to either file is a major version bump
 and needs AJ's blessing (see Versioning).
 
+**Amended 2026-08-03 (ocarina 0.7.0): THE PLACE SENSE** — dojo docs/25,
+ratified by AJ the same day (the fifth flight, docs/24, is the evidence
+base). Adds the place principle pair below, the `oot://place` resource,
+the `place` event category, the `place.*` digest section, the bearings
+rider, and the `traverse` behavior primitive (MACHINE.md).
+
 ## The goal (AJ, verbatim in spirit)
 
 1. Enable inputs via the behavior machine.
@@ -45,6 +51,23 @@ computes every event; detection is free via GameInteractor hooks.
   reviewed change.
 - **Senses rich, wakes minimal.** That night exists = sense (always
   provided). That night matters = knowledge (earned in play).
+- **Self vs others** (docs/25, AJ 2026-08-03). Superhuman knowledge of
+  OTHERS is where unfairness lives; confidence about SELF is an
+  accessibility obligation — a sighted player has continuous visual
+  self-localization the text channel lacks. Exact self-pose
+  (`place.x/y/z/facing`) is compensation, not superpower; everything
+  mind-facing about the WORLD stays judgments in eye-units, with exact
+  numbers body-side only (the two-audience split, applied to space).
+- **The place sense is generated, never authored** (docs/25). Region
+  graphs distill from the scene's own collision data; identifiers are
+  deterministic (geometry-derived) so mind-side knowledge accrues on
+  them; evocative names are the mind's job. Cross-region ROUTING is
+  cognition (the mind's, over `oot://place`); within-region steering
+  and single named legs are motor (`traverse`, MACHINE.md), and
+  traverse refuses anything the map does not vouch for — off-mesh,
+  unverified candidates — BEFORE moving. Corollary (ruled 2026-08-03):
+  mind-side distillation of game data files is CONTRABAND in scored
+  play, exactly as savestates are — the lab pipeline is dev tooling.
 - **No pad verb. Ever.** The mind acts only by machine states; behaviors
   act at 20 Hz inside the server.
 - **Benchmark purity.** No savestate/load, no trial-drill, no merge-gate
@@ -111,6 +134,17 @@ Senses (active):
 - `oot://dialogue` — current/recent text verbatim, choices as data.
 - `oot://menu/items|equipment|map|quest` — the pause subscreens as
   documents (songs learned live in quest).
+- `oot://place` — the place sense (docs/25): this scene's region graph
+  as judgments over stable names — regions with judged sizes and
+  elevations, typed climb edges with judged heights, drop/jump
+  candidates honestly marked unverified, `you_are_here`. No raw
+  coordinates (names carry quantized centroids as IDENTITY, by the
+  blessed scheme). Reveal grain: the blessed grain is the game's own
+  minimap (dungeon rooms as entered; Map/Compass shelved with the
+  principle recorded — the items simulate the human player's benefit,
+  never the full lab-grade graph); v0 reveals whole-scene at entry, a
+  documented honesty gap flagged in the document itself until
+  region→room membership exists.
 - `oot://machine` — declared vs LIVE machine, as two columns (the
   conjunction discipline: "repo says armed" ≠ "server confirms armed").
 - `oot://journal/mechanical` — the persisted event timeline.
@@ -127,10 +161,13 @@ present. The timeline **interleaves world events and machine events**
 
 Grammar (closed, ~a dozen categories; vocabulary open):
 `telegraph`, `sfx`, `bgm_change`, `environment`, `spawn`, `despawn`,
-`damage_taken`, `damage_dealt`, `actor_state`, `pickup`, `ui`, plus
-machine events (`entered`, `exited`, `behavior_done`, `behavior_aborted`,
-`wake`). (`behavior_done` added in the 2026-08-01 hardening pass — leaf
-completion is explicit; see MACHINE.md.)
+`damage_taken`, `damage_dealt`, `actor_state`, `pickup`, `ui`, `place`,
+plus machine events (`entered`, `exited`, `behavior_done`,
+`behavior_aborted`, `wake`). (`behavior_done` added in the 2026-08-01
+hardening pass — leaf completion is explicit; see MACHINE.md. `place`
+added 2026-08-03 under the rare-reviewed-change rule, docs/25:
+`environment` is the world changing, `place` is YOUR relationship to
+the world changing — cues `region_entered`, `fell`.)
 Example: `{"event": "telegraph", "actor": "deku_baba#3", "cue": "rearing",
 "t": 48212}`.
 

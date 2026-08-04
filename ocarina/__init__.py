@@ -73,7 +73,43 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: so a missing label never silently means "budget exceeded". That last
 #: part is the flight's general lesson: a debug layer must show the
 #: BOUNDARY of what it received, not only the contents. No contract touch.
-OCARINA_VERSION = "0.6.0"
+#: 0.7.0: THE PLACE SENSE (dojo docs/25, ratified by AJ 2026-08-03; the
+#: fifth flight, docs/24, is the evidence base; minor digit = the
+#: major-bump meaning in 0.x — this touches both contract files).
+#: Region graphs distill from the scene's own collision data (the lab
+#: pipeline ported: collision.py + navgraph.py + place.py) with
+#: DETERMINISTIC geometry-derived names, so mind-side knowledge accrues
+#: on stable identifiers. The digest grows `place.*` — region, on_mesh,
+#: and EXACT self-pose x/y/z/facing/heading under the ratified self-pose
+#: exemption (knowledge of others is where unfairness lives; confidence
+#: about self is an accessibility obligation) — and the `nearest_enemy`
+#: slot grows clock-face `bearing` (the rider; the wire carried actor
+#: positions since first light — the gap was curation, priced by the
+#: fifth flight at three behavior versions of trilateration). New
+#: `place` event category (region_entered, fell — the rare reviewed
+#: grammar change), `oot://place` (judgments over names, no raw
+#: coordinates; v0 whole-scene reveal is a flagged honesty gap until
+#: region->room membership exists), and `game.traverse()` — ONE named
+#: leg, refusing everything the map does not vouch for BEFORE moving
+#: (the v6 void jump, killed by construction); cross-region routing
+#: stays the mind's, by ruling. locate_probe-class diagnostics retire,
+#: subsumed by place.*; mind-side distillation of game data is ruled
+#: CONTRABAND in scored play (the lab is dev tooling, like savestates).
+#: 0.7.1: the acceptance flight's harvest (sixth flight, 2026-08-04) —
+#: three traverse fixes, all found by play in one afternoon, none by 164
+#: tests: (1) a modal message box freezes the pad, so traverse now fails
+#: fast naming the real blocker instead of pushing a dead stick into a
+#: false story (Navi's skullwalltula lecture ate a 12 s grab window);
+#: (2) the wedge reflex — actors are not in the collision mesh, so a
+#: mesh-clean route can still wedge on a treasure chest; position frozen
+#: ~3 s while pushing now triggers a mesh-checked sidestep (never toward
+#: the void) instead of a 20 s "stalled" misdiagnosis; (3) base-segment
+#: grabs — a tall curved climb sheet's 3D centroid can hang beside a
+#: chest over a genuine gap in the vines, so distill now keeps each
+#: column's floor-touching bottom segments and resolve_traverse aims the
+#: grab at the longest segment the from-region can stand beside. No
+#: contract touch.
+OCARINA_VERSION = "0.7.1"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

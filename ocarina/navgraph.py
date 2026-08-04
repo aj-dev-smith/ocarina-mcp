@@ -1,17 +1,25 @@
 """Distill a parsed collision mesh into a navigation region graph.
 
+PORTED 2026-08-03 from `lab/navgraph/distill.py` (the fifth-flight
+place-sense lab; dojo docs/24-25, RATIFIED by AJ 2026-08-03). Diff against
+the lab original: this header, the import line, and the removed CLI
+harness only — the lab keeps its own copy as the offline instrument and
+`lab/navgraph/test_ring.py` (the o'clock test + the identity pins) is the
+regression for both.
+
 v0 algorithm, deliberately simple:
   - walkable polys (normal.y >= FLOOR_NY) flood-filled over shared edges
     (vertices deduped by coordinate so sub-mesh seams don't split regions)
-  - climb edges from ladder/vine wall polys, linked to the floor regions
-    their bottom/top vertices touch
+  - deterministic identity (docs/25, a contract requirement): region and
+    climb-column NAMES derive from geometry alone, so mind-side knowledge
+    can accrue on them across distiller changes
+  - climb edges from ladder/vine/crawl wall polys, linked to the floor
+    regions their span touches
   - drop/jump candidate edges from region-boundary proximity (marked
-    "candidate" — v0 makes no traversability promise)
+    "candidate" — no traversability promise; excluded from routing and
+    from traverse by construction)
 
-Output: JSON for the HTML viewer, including poly-level adjacency so the
-viewer can run A* interactively.
-
-Stdlib only. Lab tool — not part of the ocarina surface.
+Stdlib only.
 """
 
 from __future__ import annotations
@@ -20,7 +28,7 @@ import json
 import math
 from collections import defaultdict
 
-from o2r_collision import CollisionMesh, load_from_o2r
+from .collision import CollisionMesh, load_from_o2r
 
 FLOOR_NY = 0.6      # walkable
 STEEP_NY = 0.45     # 0.45..0.6 rendered as "steep" (slide-y), not walkable
@@ -258,9 +266,30 @@ def distill(mesh: CollisionMesh) -> dict:
             lo_regions = {r for r, y in near.items() if y < mid}
             hi_regions = {r for r, y in near.items() if y >= mid}
         cen = [round(sum(pt[i] for pt in pts) / len(pts), 1) for i in range(3)]
+        # Base segments: the column's FLOOR-TOUCHING bottom edges, kept
+        # per segment. A tall curved sheet's 3D centroid ("at") can hang
+        # in space nowhere near reachable vine at floor level — the sixth
+        # flight's ring->3F sheet (26 polys wrapping the shaft) put it
+        # beside a treasure chest parked over a genuine gap in the vines.
+        # traverse aims grabs at these, not at "at".
+        base_segments = []
+        for p in members:
+            vs = [coords[k] for k in tri(p)]
+            low = [v for v in vs if v[1] <= y_lo + 40.0]
+            if len(low) >= 2:
+                for i in range(len(low)):
+                    for j in range(i + 1, len(low)):
+                        a, b = low[i], low[j]
+                        seg_len = math.hypot(a[0] - b[0], a[2] - b[2])
+                        if seg_len >= 20.0:
+                            base_segments.append(
+                                [[round(c, 1) for c in a],
+                                 [round(c, 1) for c in b]])
+        base_segments.sort(key=lambda s: (s[0], s[1]))
         climb_edges.append({
             "kind": kind, "at": cen, "y_lo": y_lo, "y_hi": y_hi,
             "segments": len(members),
+            "base_segments": base_segments,
             "from": sorted(lo_regions), "to": sorted(hi_regions),
             "linked": bool(lo_regions and hi_regions),
         })
@@ -344,35 +373,3 @@ def distill(mesh: CollisionMesh) -> dict:
                                   key=lambda e: (e["from"], e["to"])),
         "water_boxes": [vars(w) for w in mesh.water_boxes],
     }
-
-
-if __name__ == "__main__":
-    import sys
-
-    o2r = sys.argv[1] if len(sys.argv) > 1 else "/Users/aj/Code/Shipwright/oot.o2r"
-    entry = sys.argv[2] if len(sys.argv) > 2 else \
-        "scenes/nonmq/ydan_scene/ydan_sceneCollisionHeader_00B610"
-    out = sys.argv[3] if len(sys.argv) > 3 else "lab/navgraph/ydan_navgraph.json"
-
-    mesh = load_from_o2r(o2r, entry)
-    graph = distill(mesh)
-
-    n_regions = len(graph["regions"])
-    n_big = sum(1 for r in graph["regions"] if not r["sliver"])
-    print(f"{len(graph['floor_polys'])} floor polys -> {n_regions} regions "
-          f"({n_big} above sliver threshold)")
-    for r in sorted(graph["regions"], key=lambda r: -r["area"])[:15]:
-        print(f"  region {r['id']:3d}: {r['polys']:3d} polys, area {r['area']:9.0f}, "
-              f"y {r['y_min']:5d}..{r['y_max']:5d}, centroid {r['centroid']}")
-    linked = sum(1 for e in graph["climb_edges"] if e["linked"])
-    print(f"{len(graph['climb_edges'])} climb walls ({linked} linked to regions "
-          f"both ends)")
-    for e in graph["climb_edges"]:
-        tag = "OK " if e["linked"] else "!! "
-        print(f"  {tag}{e['kind']:6s} y {e['y_lo']:5d}..{e['y_hi']:5d} "
-              f"from {e['from']} to {e['to']} at {e['at']}")
-    print(f"{len(graph['candidate_edges'])} drop/jump candidates")
-
-    with open(out, "w") as f:
-        json.dump(graph, f)
-    print(f"wrote {out}")

@@ -31,6 +31,7 @@ from . import MACHINE_FORMAT_VERSION, OCARINA_VERSION, senses
 from .events import EventLog
 from .game import Game
 from .link import GameLink, LinkError
+from .place import PlaceSense
 from .protocol import DEFAULT_PORT
 from .runtime import MachineRuntime
 
@@ -121,6 +122,12 @@ RESOURCES = [
      "description": "The map pause subscreen.", "mimeType": "application/json"},
     {"uri": "oot://menu/quest", "name": "menu/quest",
      "description": "The quest pause subscreen (songs learned live here).",
+     "mimeType": "application/json"},
+    {"uri": "oot://place", "name": "place",
+     "description": "The place sense (docs/25): this scene's region graph as "
+                    "judgments over stable names — regions, climb columns, "
+                    "unverified candidates, where you are. Route planning is "
+                    "yours; bodies traverse one named edge at a time.",
      "mimeType": "application/json"},
     {"uri": "oot://machine", "name": "machine",
      "description": "Declared vs LIVE machine, two columns (the conjunction discipline).",
@@ -299,8 +306,10 @@ class ServerCore:
             if not self.game.link.connected:
                 body = {"error": "game not connected"}
             else:
-                body = senses.digest(self.game.state(),
-                                     self.runtime.sightings)
+                st = self.game.state()
+                sample = (self.runtime.place.sample(st)
+                          if self.runtime.place is not None else None)
+                body = senses.digest(st, self.runtime.sightings, sample)
         elif base == "oot://events":
             q = parse_qs(parsed.query)
 
@@ -310,6 +319,8 @@ class ServerCore:
                                  category=one("category", str),
                                  kind=one("kind", str),
                                  since_t=one("since_t", int))
+        elif base == "oot://place":
+            body = self.runtime.place_view()
         elif base == "oot://machine":
             body = self.runtime.machine_view()
         elif base == "oot://journal/mechanical":
@@ -389,13 +400,18 @@ def main(argv=None) -> int:
                         help="Sail listen port")
     parser.add_argument("--wake-deadline", type=float, default=300.0,
                         help="seconds before an unanswered wake takes its default")
+    parser.add_argument("--o2r", type=Path, default=None,
+                        help="SoH's oot.o2r (the collision source the place "
+                             "sense distills region graphs from); without it "
+                             "the place sense is OFF, loudly")
     args = parser.parse_args(argv)
 
     link = GameLink(host=args.host, port=args.port)
     game = Game(link)
     log = EventLog(persist_path=args.repo / "journal" / "mechanical.jsonl")
     runtime = MachineRuntime(game, args.repo, log,
-                             wake_deadline_s=args.wake_deadline)
+                             wake_deadline_s=args.wake_deadline,
+                             place=PlaceSense(args.o2r))
     core = ServerCore(game, runtime, log)
 
     link.start()

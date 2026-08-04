@@ -6,6 +6,12 @@ state guards, explicit leaf completion, version pinning all decided in
 conversation). Part of the contract with SURFACE.md; a change here is a
 major version bump and needs AJ's blessing.
 
+**Amended 2026-08-03 (ocarina 0.7.0, dojo docs/25 — the place sense):**
+the digest schema grows `place.*` and `nearest_enemy.bearing` (guards
+read them like any field; the load-time path check covers them); the
+event grammar grows the dispatchable `place` category; and the behavior
+interface gains the `traverse` leg primitive (see Leaves and behaviors).
+
 **Clarification pass, 2026-08-01 (post-first-light):** six points where
 this file was silent and the built server had to choose were reviewed
 and ratified — AJ delegating the ruling to the mind as this surface's
@@ -258,6 +264,29 @@ point of the dojo and this format must never break it.
 **machine.yaml pins exact versions** (`behavior: navigate_field_v3`).
 Upgrading a behavior is a visible one-line diff — git history as the
 literal evolution of Link's brain.
+
+### The traverse primitive (added 0.7.0, docs/25)
+
+`game.traverse(target)` moves Link across exactly ONE named place-graph
+edge (a climb column) or into ONE named ADJACENT region — never a
+route. Cross-region routing is cognition and belongs to the mind over
+`oot://place` (ruled 2026-08-03: the harness must not pathfind for the
+mind); within-region steering to the edge is motor, poly-level, and
+cannot leave the region — so it cannot cross a void by construction.
+Anything the map does not vouch for — an off-mesh start, an unknown
+name, a non-adjacent region, an unverified drop/jump candidate, an
+unlinked column — raises `TraverseRefused` BEFORE any movement (clean,
+catchable, journal-honest; never a best-effort approximation). A legal
+leg that doesn't complete raises `TraverseFailed`. Success is claimed
+only after the map confirms arrival in the linked region. Descending
+climbs and crawlspaces are honest not-yets, refused by name.
+
+One preemption refinement rides along: long composite primitives
+(traverse's walk/grab/ascend loops) poll the preemption flag every
+iteration, so a transition leaving the leaf lands mid-climb rather
+than after the whole leg — the same latency promise `game.wait()`'s
+chunking already made for sleeps. Op-boundary preemption is unchanged
+for everything else.
 
 ## What reload_machine() validates
 

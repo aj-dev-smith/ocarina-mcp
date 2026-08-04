@@ -70,13 +70,20 @@ class _PendingWake:
 class MachineRuntime:
     def __init__(self, game: Game, repo: Path | str, log: EventLog,
                  wake_push: Optional[Callable[[dict], None]] = None,
-                 tick_s: float = 0.05, wake_deadline_s: float = 300.0):
+                 tick_s: float = 0.05, wake_deadline_s: float = 300.0,
+                 place=None):
         self.game = game
         self.repo = Path(repo)
         self.log = log
         self.wake_push = wake_push
         self.tick_s = tick_s
         self.wake_deadline_s = wake_deadline_s
+        #: The place sense (place.PlaceSense) or None. Shared with the
+        #: Game so behaviors' traverse() validates against the same map
+        #: the digest localizes on — two maps would be two beliefs.
+        self.place = place
+        if place is not None:
+            game.place = place
 
         self.machine: Optional[Machine] = None
         self.diagnostics: list = []
@@ -122,7 +129,9 @@ class MachineRuntime:
         return st.get("gameplay_frames") if st else None
 
     def _digest(self) -> dict:
-        return senses.digest(self._last_state or {}, self.sightings)
+        st = self._last_state or {}
+        sample = self.place.sample(st) if self.place is not None else None
+        return senses.digest(st, self.sightings, sample)
 
     # -- loading (the reload_machine bridge) ---------------------------------
 
@@ -196,6 +205,7 @@ class MachineRuntime:
             self._tick_connection()
             self._drain_wire()
             self._fold_sightings()
+            self._fold_place()
             self._finish_behavior()
             self._push_overlay(now)
             if self._wake is not None:
@@ -320,6 +330,21 @@ class MachineRuntime:
         for ev in senses.spawn_events(self.sightings.observe(st), self.seen):
             self._record(ev)
             self._dispatch(ev)
+
+    def _fold_place(self) -> None:
+        """The place sense's narration (docs/25): region_entered on
+        non-sliver region change, fell on an unplanned downward one —
+        plus its diagnostics (distillation stats, missing maps, unlinked
+        columns) into the journal, where an instrument gap belongs."""
+        if self.place is None:
+            return
+        st = self._last_state
+        if st is not None:
+            for ev in self.place.fold(st):
+                self._record(ev)
+                self._dispatch(ev)
+        for text in self.place.drain_diagnostics():
+            self._record({"event": "diagnostic", "text": text})
 
     def _finish_behavior(self) -> None:
         run = self.executor.finish()
@@ -667,7 +692,22 @@ class MachineRuntime:
                 "wakes": self.wakes,
                 "freeze_failures": self.freeze_failures,
                 "heartbeat_s": self.heartbeat_s,
+                "place_sense": (self.place.status_line(self._last_state)
+                                if self.place is not None else "not constructed"),
             }
+
+    def place_view(self) -> dict:
+        """oot://place — the scene graph as judgments over stable names.
+        Refreshes the snapshot first when connected so `you_are_here`
+        is current, not a photograph."""
+        if self.place is None:
+            return {"error": "place sense not constructed"}
+        if self.game.link.connected:
+            try:
+                self.game.state()      # observer refreshes _last_state
+            except LinkError:
+                pass
+        return self.place.document(self._last_state)
 
     def machine_view(self) -> dict:
         """oot://machine — declared vs LIVE as two columns (the conjunction

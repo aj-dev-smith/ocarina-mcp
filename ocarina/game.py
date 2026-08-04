@@ -25,7 +25,9 @@ import threading
 import time
 from typing import Iterable, Optional
 
-from .link import GameLink
+from .behavior import BehaviorPreempted
+from .link import GameLink, LinkError
+from .place import TraverseFailed, TraverseRefused
 from .protocol import (TICK, buttons_mask, PLAYER_STATE1_DEAD, PLAYER_UNCONTROLLABLE,
                        PLAYER_STATE1_CLIMBING_LADDER, PLAYER_STATE1_CLIMBING_LEDGE,
                        PLAYER_STATE1_ON_A_WALL, PLAYER_STATE2_DO_ACTION_CLIMB)
@@ -49,6 +51,15 @@ class Game:
         # Called with every state() snapshot (see module docstring). Must be
         # cheap and must not call back into Game.
         self.state_observer: Optional[callable] = None
+        # The place sense (place.PlaceSense), attached by the runtime when
+        # the server has an --o2r. traverse() refuses without it.
+        self.place = None
+        # Preemption plumbing for LONG composites (traverse): the executor
+        # points these at its flag/reason so traverse's loops can notice a
+        # preempting transition mid-op instead of after a full climb —
+        # the same latency promise wait()'s chunking makes for sleeps.
+        self._preempt_event = None
+        self._preempt_reason: list = []
 
     def reset_instruments(self) -> None:
         self.swings = 0
@@ -563,6 +574,234 @@ class Game:
         self.pad_clear()
         here = self.pos()
         return bool(here and here[1] >= target_y)
+
+    # -- traverse: the place-sense leg primitive (dojo docs/25) --------------
+    # ONE named edge of the region graph per call — never a route. Cross-
+    # region routing is cognition and belongs to the mind over oot://place
+    # (docs/25, ruled: the mind routes itself); this is the motor half:
+    # steer inside the known region to the column, grab, ascend, verify.
+    # All refusal logic lives in PlaceSense.resolve_traverse — BEFORE any
+    # movement, so an off-mesh or unverified target is inexpressible here
+    # (the v6 void jump, killed by construction). The climb mechanics are
+    # the fifth flight's validated recipe (examples/fifth-flight
+    # navgraph.py: grab needs forward velocity, no camera term on the
+    # wall, never press A) — see the climbing section's three facts.
+
+    def _poll_preempt(self) -> None:
+        """Raise BehaviorPreempted if a transition has left this leaf.
+        traverse's loops call it every iteration so preemption lands
+        mid-climb, not after the whole leg."""
+        ev = self._preempt_event
+        if ev is not None and ev.is_set():
+            raise BehaviorPreempted(
+                self._preempt_reason[0] if self._preempt_reason else "preempted")
+
+    def _check_message_box(self, when: str) -> None:
+        """A modal text box freezes the pad entirely (msg_mode != 0 gates
+        all input in z_player.c) — pushing a stick under one stalls with
+        a FALSE story ("never got a grip", "stalled 48 units out").
+        Fail fast and name the real blocker instead; dismissing it is the
+        mind's call (dialogue_advance), never the legs'. Found live on
+        the sixth flight: Navi's skullwalltula lecture opened mid-leg
+        and ate the entire 12 s grab window."""
+        if self.state().get("msg_mode", 0) != 0:
+            raise TraverseFailed(
+                f"a message box opened {when} — input is frozen until it "
+                "is read; dialogue_advance, then retry the leg")
+
+    def _dodge_wedge(self, x: float, z: float, side: int, magnitude: int,
+                     graph=None, rid=None) -> bool:
+        """Sidestep an obstacle the map cannot see. Actors (a chest, a
+        pot) are not in the collision mesh, so a route the mesh vouches
+        for can still wedge against one — the sixth flight's ring walk
+        did, nose to the fifth flight's opened chest, and the stall
+        guard told a false story ("stalled") about a true obstacle.
+        MESH-CHECKED: a dodge landing the region does not own is never
+        attempted — a blind sidestep on a walkway is a step into the
+        void (the v6 lesson, applied to recovery too). Tries `side`
+        first, then the other; False if neither landing is owned."""
+        here = self.pos()
+        if here is None:
+            return False
+        toward = self.world_yaw_to_point(x, z)
+        for ang in (0x4000 * side, -0x4000 * side):
+            yaw = (toward + ang) & 0xFFFF
+            rad = yaw / 0x8000 * math.pi
+            cx = here[0] + 45.0 * math.sin(rad)
+            cz = here[2] + 45.0 * math.cos(rad)
+            if graph is not None:
+                hit = graph.locate(cx, here[1], cz)
+                if hit is None or (rid is not None and hit[0]["id"] != rid):
+                    continue
+            self.walk_bearing(yaw, seconds=0.5, magnitude=magnitude)
+            return True
+        return False
+
+    def _traverse_walk(self, x: float, z: float, within: float,
+                       deadline: float, magnitude: int,
+                       graph=None, rid=None) -> None:
+        """walk_to_point until arrival, with two distinct failure senses
+        (the flight's _walk_leg pattern, sharpened by the sixth flight):
+        a WEDGE — position frozen ~3 s while pushing — means an obstacle
+        the mesh cannot see, and gets the bump-and-sidestep reflex any
+        walker has; a genuine STALL — 20 s without gaining 20 units —
+        stays fatal, because wedged must not read as walking."""
+        best = self.dist_to_point(x, z)
+        stall_at = time.time() + 20.0
+        anchor = self.pos()
+        wedge_at = time.time() + 3.0
+        side, dodges = 1, 0
+        while time.time() < min(deadline, stall_at):
+            self._poll_preempt()
+            self._check_message_box("mid-walk")
+            if self.dist_to_point(x, z) <= within:
+                return
+            self.walk_to_point(x, z, within=within, timeout=1.5,
+                               magnitude=magnitude)
+            now = self.dist_to_point(x, z)
+            if now < best - 20.0:
+                best, stall_at = now, time.time() + 20.0
+            here = self.pos()
+            if here is not None and anchor is not None and \
+                    math.hypot(here[0] - anchor[0],
+                               here[2] - anchor[2]) > 12.0:
+                anchor, wedge_at = here, time.time() + 3.0
+            elif time.time() > wedge_at:
+                dodges += 1
+                if dodges > 6:
+                    raise TraverseFailed(
+                        f"wedged {now:.0f} units from waypoint ({x:.0f}, "
+                        f"{z:.0f}) by something the map cannot see (an "
+                        f"actor?) — {dodges - 1} sidesteps did not clear it")
+                if not self._dodge_wedge(x, z, side, magnitude, graph, rid):
+                    raise TraverseFailed(
+                        f"wedged {now:.0f} units from waypoint ({x:.0f}, "
+                        f"{z:.0f}) with no mesh-safe sidestep on either "
+                        f"side — not clearable blind")
+                side = -side
+                anchor, wedge_at = self.pos(), time.time() + 3.0
+        if self.dist_to_point(x, z) > within:
+            raise TraverseFailed(
+                f"stalled {self.dist_to_point(x, z):.0f} units from "
+                f"waypoint ({x:.0f}, {z:.0f})")
+
+    def traverse(self, target: str, timeout_s: float = 90.0,
+                 magnitude: int = 80) -> dict:
+        """Traverse one named place-graph edge (a climb column) or step to
+        a named ADJACENT region. Raises TraverseRefused before any
+        movement for anything the map does not vouch for; raises
+        TraverseFailed when a legal leg doesn't complete. Returns
+        {ok, via, to, duration_s} only after the MAP confirms arrival —
+        the primitive's own motions are not proof (docs/08)."""
+        place = self.place
+        if place is None:
+            raise TraverseRefused(
+                "no place sense attached (server started without --o2r) — "
+                "traverse refuses rather than guesses")
+        leg = place.resolve_traverse(self.state(), target)
+        self._check_message_box("before the leg started")
+        deadline = time.time() + timeout_s
+        started = time.time()
+        place.begin_leg(leg["name"])
+        try:
+            # 1. Walk the in-region polyline to the column's base (motor:
+            #    the polyline cannot leave the region, so it cannot cross
+            #    a void — "go around" is the absence of edges). The graph
+            #    rides along so the wedge reflex can mesh-check dodges.
+            g, rid = leg["graph"], leg["from_rid"]
+            for (wx, wz) in leg["waypoints"]:
+                self._traverse_walk(wx, wz, within=55.0, deadline=deadline,
+                                    magnitude=magnitude, graph=g, rid=rid)
+            # A map-vouched stand point wants a TIGHT approach: the stand
+            # is 40 units off the wall beside whatever clutter guards the
+            # base, and an 85-unit "arrival" can stop on the wrong side
+            # of that clutter (the sixth flight's chest).
+            bx, bz = leg["at"]
+            grab = leg.get("grab")
+            self._traverse_walk(bx, bz,
+                                within=(30.0 if grab is not None else 85.0),
+                                deadline=deadline,
+                                magnitude=magnitude, graph=g, rid=rid)
+
+            # 2. Aim the grab. The map's base segment is the truth when
+            #    present (its midpoint IS reachable climbable wall, by
+            #    construction); the scan is only the legacy fallback for
+            #    graphs without segments — it misled twice on the sixth
+            #    flight (nearest-hit = the patch's edge; hit centroids
+            #    mix faces around a curved shaft).
+            rays = None
+            if grab is not None:
+                tx, tz = grab
+            else:
+                tx, tz = bx, bz
+                rays = self.scan_climbable(rays=24, length=300.0)
+                if rays:
+                    face = min(rays, key=lambda r: r.get("dist", 1e9))
+                    pos = face.get("pos") or []
+                    if len(pos) >= 3:
+                        tx, tz = pos[0], pos[2]
+
+            # 3. Grab: keep walking INTO the face (the grab gate needs
+            #    forward velocity on the frame it is evaluated). Bearing
+            #    computed ONCE, outside the loop — at wall contact Link's
+            #    position jitters and a recomputed bearing swings with it
+            #    (the fifth flight's recipe held a fixed bearing).
+            grab_deadline = min(deadline, time.time() + 12.0)
+            bearing = self.world_yaw_to_point(tx, tz)
+            while time.time() < grab_deadline and not self.climbing():
+                self._poll_preempt()
+                self._check_message_box("while grabbing the wall")
+                self.walk_bearing(bearing, seconds=0.3, magnitude=magnitude)
+            if not self.climbing():
+                probe = ("aimed at the map's base segment"
+                         if grab is not None else
+                         "scan confirmed a face" if rays
+                         else "scan saw NO face — graph belief unverified")
+                raise TraverseFailed(
+                    f"walked into {leg['name']} for 12s, never got a grip "
+                    f"({probe})")
+
+            # 4. Ascend, stall-guarded, until top-out (mounting the ledge
+            #    clears CLIMBING; leaving the wall any other way breaks
+            #    the loop and the verify step below tells the truth).
+            start_y = (self.pos() or (0.0, 0.0, 0.0))[1]
+            best_y = start_y
+            stall_at = time.time() + 3.0
+            while time.time() < deadline:
+                self._poll_preempt()
+                self._check_message_box("mid-climb")
+                if not (self.climbing() or self.mounting_ledge()):
+                    break
+                self.pad(stick=(0, magnitude))
+                time.sleep(0.2)
+                y = (self.pos() or (0.0, best_y, 0.0))[1]
+                if y > best_y + 5.0:
+                    best_y, stall_at = y, time.time() + 3.0
+                elif time.time() > stall_at:
+                    self.pad_clear()
+                    raise TraverseFailed(
+                        f"stuck on {leg['name']} at +{best_y - start_y:.0f} "
+                        f"for 3s (a Skullwalltula? a lip?)")
+            self.pad_clear()
+            time.sleep(0.6)
+
+            # 5. Verify arrival against the map.
+            here = self.pos()
+            hit = leg["graph"].locate(*here) if here else None
+            if hit is None or hit[0]["id"] not in leg["to_rids"]:
+                got = leg["graph"].region_name(hit[0]) if hit else "OFF THE MAP"
+                raise TraverseFailed(
+                    f"climbed {leg['name']} but the map says Link is in "
+                    f"{got}, not the linked region")
+            return {"ok": True, "via": leg["name"],
+                    "to": leg["graph"].region_name(hit[0]),
+                    "duration_s": round(time.time() - started, 1)}
+        finally:
+            place.end_leg()
+            try:
+                self.pad_clear()
+            except LinkError:
+                pass
 
     def controllable(self) -> bool:
         """True when Link will actually respond to the pad."""

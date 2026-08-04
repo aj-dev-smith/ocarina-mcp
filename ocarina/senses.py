@@ -52,6 +52,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .place import clock_bearing
 from .protocol import (ACTORCAT_ENEMY, PLAYER_STATE1_CLIMBING_LADDER,
                        PLAYER_STATE1_DEAD, PLAYER_STATE1_ON_A_WALL)
 
@@ -123,6 +124,21 @@ SCHEMA = {
         "kind": str,            # official name (the visual gestalt as text)
         "dist": float,          # apparent distance, xz — a PROJECTION
         "above": float,         # height over Link (docs/08 §17: read it)
+        "bearing": int,         # clock-face vs Link's facing, 12 = ahead
+                                # (docs/25 rider: a sighted player calls
+                                # directions clock-face; raw pos/yaw stay
+                                # body-side — the wire carried them since
+                                # first light, the gap was curation)
+    },
+    "place": {                  # the place sense (docs/25; absent entity
+                                # when no map / no --o2r / pre-play)
+        "region": str,          # stable region id (absent while off-mesh)
+        "on_mesh": bool,        # False = the map has no floor under you
+        "x": float,             # exact self-pose: the self-pose exemption
+        "y": float,             # (knowledge of OTHERS is where unfairness
+        "z": float,             # lives; confidence about SELF is an
+        "facing": int,          # accessibility obligation — AJ, docs/25)
+        "heading": str,         # 8-wind judged form (n/ne/e/... ; north=-z)
     },
     "enemies": int,             # living enemies in view
 }                               # "in view" = ever-sighted this scene (Sightings)
@@ -266,14 +282,16 @@ def nearest_enemy_slot(state: dict, sightings: Sightings) -> dict | None:
     return min(enemies, key=lambda a: a.get("dist_xz", float("inf")))
 
 
-def digest(state: dict, sightings: Sightings) -> dict:
+def digest(state: dict, sightings: Sightings, place: dict | None = None) -> dict:
     """Raw DojoLink snapshot -> the curated digest guards and the mind see.
 
     Behaviors see the raw snapshot server-side at 20 Hz; this is the
     narration. Must match SCHEMA exactly — the load-time path check is
     only as good as this function's fidelity to it. `sightings` is
     required, not defaulted: a call site that forgot it would be a call
-    site quietly reinstating X-ray vision.
+    site quietly reinstating X-ray vision. `place` is the PlaceSense
+    sample for this snapshot (docs/25), or None when the sense has
+    nothing honest to say — absent entity, never a guess.
     """
     player = state.get("player") or {}
     flags1 = player.get("state_flags1", 0)
@@ -293,6 +311,8 @@ def digest(state: dict, sightings: Sightings) -> dict:
         },
         "enemies": len(enemies),
     }
+    if place is not None:
+        out["place"] = dict(place)
     near = nearest_enemy_slot(state, sightings)
     if near is not None:
         out["nearest_enemy"] = {
@@ -305,6 +325,14 @@ def digest(state: dict, sightings: Sightings) -> dict:
             # 2026-08-01. The workshop's probe_room negates it identically.
             "above": -float(near.get("dist_y", 0.0)),
         }
+        # The bearings rider (docs/25): clock-face relative to Link's
+        # facing — the form a sighted player calls directions in. Omitted
+        # (ABSENT) if the instrument doesn't carry positions.
+        ppos, apos = player.get("pos"), near.get("pos")
+        if ppos and apos and player.get("yaw") is not None:
+            out["nearest_enemy"]["bearing"] = clock_bearing(
+                float(ppos[0]), float(ppos[2]), int(player["yaw"]),
+                float(apos[0]), float(apos[2]))
     return out
 
 
@@ -312,10 +340,14 @@ def digest(state: dict, sightings: Sightings) -> dict:
 
 #: The closed grammar (SURFACE.md): world categories + machine events.
 #: A new category is a rare, reviewed change — vocabulary is open, this
-#: tuple is not.
+#: tuple is not. (`place` added 2026-08-03 under exactly that review:
+#: dojo docs/25 open call 5, ratified — `environment` is the world
+#: changing; `place` is YOUR relationship to the world changing, and a
+#: journal that can't distinguish them attaches blame badly. Cues:
+#: region_entered, fell.)
 WORLD_EVENTS = ("telegraph", "sfx", "bgm_change", "environment", "spawn",
                 "despawn", "damage_taken", "damage_dealt", "actor_state",
-                "pickup", "ui")
+                "pickup", "ui", "place")
 MACHINE_EVENTS = ("entered", "exited", "behavior_done", "behavior_aborted",
                   "wake", "journal", "directive", "escalation", "diagnostic")
 ALL_EVENTS = WORLD_EVENTS + MACHINE_EVENTS
