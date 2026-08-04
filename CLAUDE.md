@@ -3,7 +3,7 @@
 You are in the ocarina repo: the MCP server piece of OoT Bench.
 **`SURFACE.md` and `MACHINE.md` are BLESSED (AJ, 2026-08-01)** — the
 contract is in force, ratified-in-place clarifications included (see
-MACHINE.md's status block), and the server has flown **four times**.
+MACHINE.md's status block), and the server has flown **five times**.
 First light (0.1.0, 2026-08-01) proved the server flies: boot via a
 behavior, geometry-sense wandering, the channel wake path, a live
 hot-swap. Second light (0.2.x–0.3.0, same day) proved the **loop**:
@@ -16,11 +16,18 @@ sighting-narrated world confirmed on sight in room 0. The fourth
 (2026-08-02 evening) was **the first flight with no rig in the middle** —
 ocarina registered as an MCP server in Claude Code, the mind playing
 through `mcp__ocarina__*` tool calls end to end — and it found the
-census cap that three verification passes had missed. Session records:
+census cap that three verification passes had missed. The fifth
+(2026-08-03) was **the first navigation by a mind-side map**: a region
+graph distilled offline from the scene's collision mesh (`lab/navgraph/`,
+built the same afternoon from a design conversation with AJ), compiled
+into waypoints, flown to the exact chest the fourth flight failed three
+ways to reach — and the chest opened. Session records:
 `../oot-dojo/docs/20-first-light-2026-08-01.md`, `docs/21-second-light-
 2026-08-01.md`, `docs/22-sight-gating-2026-08-02.md` (design →
-ratification → verification, one file), and
-`docs/23-fourth-flight-2026-08-02.md`.
+ratification → verification, one file), `docs/23-fourth-flight-
+2026-08-02.md`, and `docs/24-fifth-flight-2026-08-03.md` (the nav design
+conversation + the lab + the flight, one file — read it before touching
+anything navigation-shaped).
 
 **Read first:** `SURFACE.md` and `MACHINE.md`, then
 `../oot-dojo/docs/19-senses-and-the-machine-2026-07-31.md` (the substance)
@@ -37,11 +44,21 @@ silently-never-fires transition shape, twice).
 - Run: `python3 -m ocarina --repo <save-file-repo>` — the repo declares
   the machine under `machine/`; SoH connects in over Sail (43384; SoH's
   own config persists Sail enabled, so launching the game auto-connects).
-  `examples/first-light/`, `examples/second-light/` and
-  `examples/fourth-flight/` are working save-file repos; second-light
-  carries the seek→hunt clearing loop and the session-fossil commentary,
-  fourth-flight adds the looking organ, sight-honest seeking, the census
-  probe, and ocarina's first climb.
+  `examples/first-light/`, `examples/second-light/`,
+  `examples/fourth-flight/` and `examples/fifth-flight/` are working
+  save-file repos; second-light carries the seek→hunt clearing loop and
+  the session-fossil commentary, fourth-flight adds the looking organ,
+  sight-honest seeking, the census probe, and ocarina's first climb;
+  fifth-flight (the same repo, kept playing) adds the navgraph-steered
+  bodies, the locate probe, and the journal of both MCP-direct flights.
+- **`lab/navgraph/`** — the place-sense feasibility lab (2026-08-03,
+  fifth flight): stdlib pipeline that parses scene collision out of
+  SoH's `oot.o2r`, flood-fills it into a region graph with typed climb
+  edges, bakes a self-contained HTML debug viewer (elevation slices,
+  click-to-route A*, region-level leg planning), and localizes live
+  positions (`locate.py`). Read its README first; `test_ring.py` is the
+  regression ("the o'clock test"). Lab only — nothing consumes it on the
+  blessed surface yet.
 - **Playing it directly (fourth flight, the current best way):** register
   ocarina as an MCP server and drive it from a Claude Code session —
   `claude mcp add ocarina --env PYTHONPATH=$PWD -- python3 -m ocarina
@@ -70,7 +87,30 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play after the fourth flight (versions 0.2.0 → 0.6.0, all committed)
+## State of play after the fifth flight (server at 0.6.0; the lab unblessed)
+
+- **THE FIFTH FLIGHT (2026-08-03, dojo docs/24; no version bump — the
+  server ran stock 0.6.0 throughout).** A design conversation on
+  navigation senses (how a text-native mind "sees" 3D space) produced
+  the **place graph** thesis: regions + typed edges (walk/climb/drop/
+  jump/crawl/door/swim), *generated* from collision data, never
+  authored; topology for the mind, raw polys for the body; narrative is
+  templates over fields; naming is the mind's job. The lab
+  (`lab/navgraph/`) proved it the same afternoon: the whole Deku Tree is
+  2,321 polys → 50 recognizable regions, the vertical spine
+  (B2→B1→GF→ring→3F) reconstructed from wall flags automatically, and
+  the "o'clock problem" (chest across the void at 6 o'clock) closed by
+  construction — the void has no polys, so A* can only walk the
+  perimeter. Then the flight: the mind localized off `locate_probe` +
+  the graph, compiled waypoints into bodies, and opened the fourth
+  flight's unreachable chest. Navigation took one try; the OPENING took
+  six versions, each buying a missing sense (see top open items).
+  Fairness rulings proposed in-conversation, NOT yet blessed: entry
+  reveals minimap-grade topology (the game's own predicate, twice
+  over); presented judgments for the mind, raw numbers body-side (the
+  already-blessed two-audience split); sounds cross occlusion; patterns
+  are knowledge. **The next session's first task is the docs-lineage
+  design doc putting the place sense up for AJ's blessing.**
 
 - **0.6.0** — CENSUS HONESTY + a budgeted overlay (fourth flight, dojo
   docs/23). The instrument's census was capped at the **nearest 12
@@ -140,29 +180,41 @@ silently-never-fires transition shape, twice).
   one frame of garbage triangles — a latent stock-SoH race our update
   rate made visible).
 
-**Top open items** (details in `../oot-dojo/harness-backlog.md`):
+**Top open items** (details in `../oot-dojo/harness-backlog.md`; the
+fifth flight re-ranked this list with field evidence):
 
-1. **THE PLACE SENSE** — promoted to the top by the fourth flight, which
-   could not open a chest sitting +360 above Link. Room 0 is a vertical
-   shaft; every door is above or below; only bushes share Link's floor.
-   `scan` is a **horizontal** fan at fixed height and never looks down,
-   and ladders/vines are collision surfaces rather than actors, so no
-   census at any cap can contain them. The digest says nothing about
-   where the player *is*. In cost order: a **`fell` event** first (nearly
-   free — `player.pos.y` is already on the wire, and three failures were
-   invisible because falling is silent); then a **floor fan** (cast DOWN
-   at a ring of bearings, report floor height or no-floor — a new `sub`
-   on the existing `scan` op, not new physics); then the narration
-   curation; plus a behaviour rule: never call a camera-relative
-   movement helper while `player.on_wall`/`player.climbing` (violating
-   it is what made Link climb down into a wall).
-2. `bgm_change` producer (enemy battle music on proximity — the game's
-   own fair unseen-enemy channel, and the compensation for losing X-ray
-   proximity info).
-3. Actor **bearings** in the digest: it carries dist and above but no
-   direction, so "a baba at 490" cannot be walked toward by a mind, only
-   by a body re-reading the raw census.
-4. **Sight-gating for behaviours, not just narration.** `game.actors()`
+1. **THE PLACE SENSE — now design-ready.** The fourth flight raised it;
+   the fifth flight PROVED the shape in the lab and flew it: region
+   graph generated from collision data, `place.*` digest section,
+   `oot://place`, a `goto` service that **refuses off-mesh targets by
+   construction** (v6 hardcoded a staging point past the walkway's inner
+   edge and Link auto-jumped into the void — validation must be a
+   service, not a discipline), and the `fell` event (walk_ring_v1
+   carries the hand-rolled ancestor: an expected-height table). Write
+   the design doc, get AJ's blessing, then promote the lab. The floor
+   fan survives as the ground-truth probe that verifies graph beliefs,
+   not as the primary survey instrument.
+2. **Actor bearings in the digest** — promoted by cost: the fifth flight
+   worked around the gap by trilateration (three census distances from
+   three known positions; fixed the chest 5 units off its actor-entry
+   truth) and it cost three behavior versions. Bearings would have cost
+   zero.
+3. **Prop pose/facing + interaction affordances — new, from the chest
+   saga.** A sighted player sees which way a chest faces (the latch) and
+   whether the A-icon reads "Open"; ocarina carries neither, and both
+   took AJ's eyes to resolve live. Learned and recorded: **En_Box front
+   = rot_y + 0x8000** (navgraph.py). The A-icon's action text is
+   presented truth (the UI principle) and belongs on the wire. Related:
+   **fine motor** — movement primitives need speed as a first-class
+   parameter (the body had two gaits, sprint and stop; analog magnitude
+   32 is what finally opened the chest) — and **screenshot as
+   escalation** earned its rank (two of AJ's screenshots resolved in
+   seconds what probes argued about for minutes).
+4. `bgm_change` producer (enemy battle music on proximity — the game's
+   own fair unseen-enemy channel; the boulder-maze walkthrough in the
+   docs/24 conversation also promotes the sfx producer generally:
+   rumble trend is how a hearing player navigates occluded hazards).
+5. **Sight-gating for behaviours, not just narration.** `game.actors()`
    is raw; sight-gating governs what the MIND is told, not what the
    HANDS reach for. `examples/fourth-flight/machine/behaviors/seek.py`
    filters on the wire's `sighted` bit by hand — that discipline wants
@@ -173,11 +225,15 @@ in-file condition; attacker identity on `damage_taken` (needs a
 wire-side patch; nearest-enemy-at-freeze is the documented workaround);
 Object_Kankyo filter; En_Item00 param-aware naming; the
 absence-semantics foot-gun lint (deferred); dojo-trial
-`approach_baba_v1`/`v2` and `climb_ladder_v1` (all UNGRADED); dialogue
-text onto the wire. Still unexercised: **real idle-session channel
-delivery** — the fourth flight drove synchronously and read wakes from
-the journal, so a wake pack has still never woken an idle Claude
-session on its own.
+`approach_baba_v1`/`v2`, `climb_ladder_v1`, and now the whole
+fifth-flight navgraph family (all UNGRADED); dialogue text onto the
+wire (the fifth flight advanced the get-item box BLIND — three
+`dialogue_advance` calls without reading a word); `save_game`'s NOT_YET
+was hit live (the opened chest died with the process — pause-menu
+navigation is now a felt gap, not a listed one). Still unexercised:
+**real idle-session channel delivery** — flights four and five drove
+synchronously and read wakes from the journal, so a wake pack has still
+never woken an idle Claude session on its own.
 
 ## Rules for this repo
 
