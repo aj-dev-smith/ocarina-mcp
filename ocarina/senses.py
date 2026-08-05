@@ -45,6 +45,13 @@ Known honesty gaps, flagged rather than hidden:
   fair unseen-enemy channel) is the next producer to build.
 - Scene is a numeric id, not a place name. Naming places is the same
   principle as naming actors; the table just doesn't exist yet.
+- Dialogue text is on the wire as of 0.8.0 (docs/27) EXCEPT wide (JPN)
+  text, which arrives as `text: null` + a `wide` flag — blind with a
+  flag, never silently wrong. An instrument predating the 2026-08-04
+  dojo patch carries no `message` block at all; the runtime diagnoses
+  that loudly, once.
+- The menu documents cover items and equipment only; map and quest
+  subscreens stay honest not-yets (their substrates aren't on the wire).
 """
 
 from __future__ import annotations
@@ -100,6 +107,57 @@ def actor_name(actor_id: int) -> str:
     return OFFICIAL_NAMES.get(actor_id, f"unknown_0x{actor_id:04X}")
 
 
+#: Item id -> official name (z64item.h ItemID) — the item vocabulary
+#: behind use_item and the oot://menu documents. Same discipline as
+#: OFFICIAL_NAMES: the name carries what the pause screen's icon already
+#: shows a player, and the table grows as items are acquired (docs/27;
+#: seeded 2026-08-04 with what the save line has actually held).
+ITEM_NAMES = {
+    0x00: "deku_stick",
+    0x01: "deku_nut",
+}
+ITEM_IDS = {name: item_id for item_id, name in ITEM_NAMES.items()}
+ITEM_NONE = 0xFF
+
+#: Inventory slots whose ammo array entry is meaningful (z64item.h
+#: SlotID order: stick, nut, bomb, bow, ..., slingshot at 6, bombchu at
+#: 8). Other slots reuse the array for unrelated state; presenting it
+#: would be computed, not presented.
+AMMO_SLOTS = (0, 1, 2, 3, 6, 8)
+
+
+def item_name(item_id: int) -> str:
+    """Official item name, or the honest unknown_0x__ placeholder."""
+    return ITEM_NAMES.get(item_id, f"unknown_0x{item_id:02X}")
+
+
+#: The equipment subscreen's vocabulary (z64item.h EquipmentType +
+#: EquipValue*): nibble per type in the worn mask, bit per piece in the
+#: owned mask. These names are the screen's own labels.
+EQUIP_TYPES = ("sword", "shield", "tunic", "boots")
+EQUIP_PIECES = {
+    "sword": ("kokiri_sword", "master_sword", "biggoron_sword"),
+    "shield": ("deku_shield", "hylian_shield", "mirror_shield"),
+    "tunic": ("kokiri_tunic", "goron_tunic", "zora_tunic"),
+    "boots": ("kokiri_boots", "iron_boots", "hover_boots"),
+}
+
+
+def equipment_view(equips: dict) -> dict:
+    """The equipment subscreen as a document: what is worn, what is
+    owned, by name (docs/27; the masks ride the wire's `equips` block)."""
+    worn_mask = int(equips.get("worn", 0))
+    owned_mask = int(equips.get("owned", 0))
+    worn, owned = {}, {}
+    for t, tname in enumerate(EQUIP_TYPES):
+        pieces = EQUIP_PIECES[tname]
+        v = (worn_mask >> (t * 4)) & 0xF
+        worn[tname] = pieces[v - 1] if 1 <= v <= len(pieces) else None
+        owned[tname] = [pieces[b] for b in range(len(pieces))
+                        if owned_mask & (1 << (t * 4 + b))]
+    return {"worn": worn, "owned": owned}
+
+
 # -- the state digest --------------------------------------------------------
 
 #: The digest schema. Guards' `state.*` paths are load-checked against
@@ -115,6 +173,20 @@ SCHEMA = {
     "nuts": int,                # ditto
     "rupees": int,              # ditto
     "dialogue_open": bool,      # a text box is on screen
+    "dialogue": {               # the box itself, readable (docs/27; absent
+                                # entity when no box, when the instrument
+                                # predates the message block, or pre-decode)
+        "text": str,            # decoded text, newlines kept (absent while
+                                # the box is still opening, and for wide/JPN
+                                # text the instrument cannot decode)
+        "state": str,           # opening/displaying/awaiting_advance/choice
+                                # /done/closing/other — the game's own box
+                                # lifecycle, curated
+        "text_id": int,         # the game's message id (stable identity)
+        "choices": list,        # choice boxes only: the options, verbatim
+        "choice_index": int,    # ditto — the LIVE cursor (dialogue_choose's
+                                # verification channel)
+    },
     "player": {
         "climbing": bool,       # Link visibly on a vine/ladder
         "on_wall": bool,        # climbing, mounting, or hanging
@@ -223,8 +295,14 @@ def spawn_events(fresh: list, seen: SeenKinds) -> list:
         if actor_id in NEVER_PRESENTED:
             continue
         kind = actor_name(actor_id)
-        events.append({"event": "spawn", "kind": kind,
-                       "novel": 1 if seen.sight(kind) else 0})
+        ev = {"event": "spawn", "kind": kind,
+              "novel": 1 if seen.sight(kind) else 0}
+        # A chest's lid state reads on sight; the wire carries the game's
+        # own treasure flag (free play 2026-08-04: a body pressed A at an
+        # already-open chest, twice, because nothing said so).
+        if a.get("opened") is not None:
+            ev["state"] = "open" if a["opened"] else "closed"
+        events.append(ev)
     return events
 
 
@@ -313,6 +391,20 @@ def digest(state: dict, sightings: Sightings, place: dict | None = None) -> dict
     }
     if place is not None:
         out["place"] = dict(place)
+    # The dialogue entity (docs/27): present exactly when the wire's
+    # `message` block is — an open box on an old instrument leaves it
+    # ABSENT (the runtime diagnoses that loudly; the entity never
+    # guesses). `text` absent while unreadable (box opening, wide/JPN).
+    msg = state.get("message")
+    if msg is not None:
+        entity = {"state": str(msg.get("state", "other")),
+                  "text_id": int(msg.get("text_id", -1))}
+        if msg.get("text") is not None:
+            entity["text"] = str(msg["text"])
+        if "choices" in msg:
+            entity["choices"] = list(msg.get("choices") or [])
+            entity["choice_index"] = int(msg.get("choice_index", 0))
+        out["dialogue"] = entity
     near = nearest_enemy_slot(state, sightings)
     if near is not None:
         out["nearest_enemy"] = {

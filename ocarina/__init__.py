@@ -109,7 +109,26 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: column's floor-touching bottom segments and resolve_traverse aims the
 #: grab at the longest segment the from-region can stand beside. No
 #: contract touch.
-OCARINA_VERSION = "0.7.1"
+#: 0.8.0: THE SPOKEN WORD AND THE SAVED GAME (dojo docs/27, ratified by
+#: AJ 2026-08-04) — three already-blessed promises implemented, no
+#: contract touch. Dialogue text rides the state snapshot (the wire's
+#: new `message` block, decoded box text + choices as data): the digest
+#: grows a nullable `dialogue` entity, `ui` gets its first producers
+#: (dialogue_opened/dialogue_closed), `oot://dialogue` goes live with a
+#: recent-texts ring, traverse's message-box fail-fast now QUOTES the
+#: box it fails on, and `dialogue_choose` graduates (stick-nudge until
+#: the wire's live cursor matches — the choice is made with a player's
+#: own inputs, verified, never a memory write). `save_game` graduates
+#: via the game's own Play_PerformSave behind the pause-legality gate
+#: (what the menu's Yes button calls, legal exactly when the menu would
+#: be — puppeting the menu was rejected in review, docs/27 call 1).
+#: `use_item(item)` graduates as programmatic C-button assignment (the
+#: item subscreen's own commit, its own legality gates) + a real
+#: C-button press, verified off the new `equips` wire block; inventory
+#: on the wire graduates `oot://menu/items` and `oot://menu/equipment`
+#: as documents. An instrument predating the 2026-08-04 dojo patch is
+#: diagnosed loudly and read as blind, never silently.
+OCARINA_VERSION = "0.8.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1
