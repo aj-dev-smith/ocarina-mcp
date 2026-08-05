@@ -91,13 +91,10 @@ TOOLS = [
 #: Tools that exist on the blessed surface but wait on instrument work.
 #: Each maps to what it needs — an honest error beats a silent stub.
 NOT_YET = {
-    "dialogue_choose": "dialogue text/choices are not on the wire yet (DojoLink patch needed)",
     "create_file": "file-select UI navigation not built yet",
     "continue_game": "death-screen UI navigation not built yet",
     "save_and_quit": "save-screen UI navigation not built yet",
-    "save_game": "pause-menu save navigation not built yet",
-    "equip": "pause-subscreen navigation not built yet",
-    "use_item": "pause-subscreen navigation not built yet",
+    "equip": "B-button/gear assignment not built yet (use_item covers C buttons; docs/27 kept equip out of scope)",
     "buy": "shop UI navigation not built yet",
     "play_song": "ocarina UI note entry not built yet",
     "screenshot": "no screenshot op on the wire yet (DojoLink patch needed)",
@@ -138,11 +135,8 @@ RESOURCES = [
 ]
 
 _NOT_YET_RESOURCES = {
-    "oot://dialogue": "dialogue text is not on the wire yet (DojoLink patch needed)",
-    "oot://menu/items": "pause-subscreen senses not built yet",
-    "oot://menu/equipment": "pause-subscreen senses not built yet",
-    "oot://menu/map": "pause-subscreen senses not built yet",
-    "oot://menu/quest": "pause-subscreen senses not built yet",
+    "oot://menu/map": "map-subscreen substrate not on the wire yet",
+    "oot://menu/quest": "quest-subscreen substrate not on the wire yet",
 }
 
 
@@ -294,6 +288,129 @@ class ServerCore:
         self.game.press("A", frames=3)
         return {"ok": True, "dialogue_open": self.game.state().get("msg_mode", 0) != 0}
 
+    def _tool_dialogue_choose(self, args) -> dict:
+        # The choice is made with a player's own inputs: nudge the stick
+        # until the wire's LIVE cursor (message.choice_index) matches, then
+        # A — verified off the wire, never a memory write (docs/27 call 6).
+        if not self.game.link.connected:
+            return {"ok": False, "error": "game not connected"}
+        st = self.game.state()
+        if st.get("msg_mode", 0) == 0:
+            return {"ok": False, "error": "no dialogue is open"}
+        msg = st.get("message")
+        if msg is None:
+            return {"ok": False,
+                    "error": "instrument predates the dialogue sense — "
+                             "rebuild SoH with the 2026-08-04 dojo patch"}
+        if msg.get("state") != "choice":
+            return {"ok": False,
+                    "error": f"no choice is being offered "
+                             f"(box state: {msg.get('state')})"}
+        choices = msg.get("choices") or []
+        try:
+            target = int(args.get("option"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "option must be an integer index"}
+        if not (0 <= target < max(len(choices), 1)):
+            return {"ok": False,
+                    "error": f"option {target} out of range "
+                             f"(choices: {choices})"}
+        cur = msg.get("choice_index", 0)
+        for _ in range(8):
+            if cur == target:
+                break
+            # Stick up moves the cursor up (index down), per the game's own
+            # Message_HandleChoiceSelection; neutral between nudges so its
+            # held-stick latch re-arms.
+            self.game.pad(stick=(0, -127 if target > cur else 127))
+            self.game.wait(0.15)
+            self.game.pad_clear()
+            self.game.wait(0.1)
+            cur = (self.game.state().get("message") or {}).get("choice_index", cur)
+        if cur != target:
+            return {"ok": False,
+                    "error": f"cursor would not reach option {target} "
+                             f"(sits at {cur})"}
+        self.game.press("A", frames=3)
+        label = choices[target] if target < len(choices) else None
+        return {"ok": True, "chose": target, "label": label,
+                "dialogue_open": self.game.state().get("msg_mode", 0) != 0}
+
+    def _tool_save_game(self, args) -> dict:
+        # Play_PerformSave behind the pause-legality gate, game-side; the
+        # refusal (if any) comes back named. No silent success path exists:
+        # "ok" here is the game's own verdict, not an assumption.
+        if not self.game.link.connected:
+            return {"ok": False, "error": "game not connected"}
+        return self.game.save_game()
+
+    _C_BUTTONS = (("C_LEFT", "c_left", 0), ("C_DOWN", "c_down", 1),
+                  ("C_RIGHT", "c_right", 2))
+
+    def _tool_use_item(self, args) -> dict:
+        # Assignment is the item subscreen's own commit (game-side, its own
+        # legality gates); use is a real C-button press; both verified off
+        # the wire's equips/inventory blocks (docs/27 call 3: the mind names
+        # the item, buttons are the server's mechanics).
+        if not self.game.link.connected:
+            return {"ok": False, "error": "game not connected"}
+        name = str(args.get("item", ""))
+        item_id = senses.ITEM_IDS.get(name)
+        if item_id is None:
+            known = ", ".join(sorted(senses.ITEM_IDS))
+            return {"ok": False,
+                    "error": f"unknown item {name!r} (known: {known} — the "
+                             f"vocabulary grows as items are acquired)"}
+        st = self.game.state()
+        equips = st.get("equips")
+        if equips is None:
+            return {"ok": False,
+                    "error": "instrument predates the equips sense — "
+                             "rebuild SoH with the 2026-08-04 dojo patch"}
+        button = next((b for b in self._C_BUTTONS
+                       if equips.get(b[1]) == item_id), None)
+        if button is None:
+            # Not on a C button yet: assign it. Server picks the button —
+            # first empty, else C-left (mechanics, not a choice).
+            button = next((b for b in self._C_BUTTONS
+                           if equips.get(b[1]) in (None, senses.ITEM_NONE)),
+                          self._C_BUTTONS[0])
+            assigned = self.game.assign_c(item_id, button[2])
+            if not assigned.get("ok"):
+                return assigned
+            verify = (self.game.state().get("equips") or {}).get(button[1])
+            if verify != item_id:
+                return {"ok": False,
+                        "error": f"assignment did not take: {button[1]} "
+                                 f"holds {verify!r} after assign_c"}
+        if not self.game.controllable():
+            return {"ok": False,
+                    "error": f"{name} is on {button[0]} but Link is not "
+                             f"controllable (dialogue open or cutscene) — "
+                             f"the press would be eaten"}
+        before = self._ammo_for(st, item_id)
+        self.game.press(button[0], frames=3)
+        self.game.wait(0.6)
+        after = self._ammo_for(self.game.state(), item_id)
+        out = {"ok": True, "item": name, "button": button[0]}
+        if before is not None:
+            out["ammo_before"] = before
+            out["ammo_after"] = after
+        return out
+
+    @staticmethod
+    def _ammo_for(st: dict, item_id: int):
+        """The ammo count backing `item_id`'s inventory slot, or None when
+        the slot carries no meaningful ammo (senses.AMMO_SLOTS)."""
+        inv = st.get("inventory") or {}
+        items, ammo = inv.get("items") or [], inv.get("ammo") or []
+        for slot, item in enumerate(items):
+            if item == item_id:
+                if slot in senses.AMMO_SLOTS and slot < len(ammo):
+                    return ammo[slot]
+                return None
+        return None
+
     # -- resources -----------------------------------------------------------
 
     def _read_resource(self, params: dict) -> dict:
@@ -320,6 +437,12 @@ class ServerCore:
                                  category=one("category", str),
                                  kind=one("kind", str),
                                  since_t=one("since_t", int))
+        elif base == "oot://dialogue":
+            body = self._dialogue_view()
+        elif base == "oot://menu/items":
+            body = self._menu_items_view()
+        elif base == "oot://menu/equipment":
+            body = self._menu_equipment_view()
         elif base == "oot://place":
             body = self.runtime.place_view()
         elif base == "oot://machine":
@@ -330,6 +453,62 @@ class ServerCore:
             raise ValueError(f"unknown resource {uri!r}")
         return {"contents": [{"uri": uri, "mimeType": "application/json",
                               "text": json.dumps(body, indent=1)}]}
+
+    def _dialogue_view(self) -> dict:
+        """oot://dialogue (docs/27): the current box verbatim, choices as
+        data, plus the session's recent-texts ring — get-item boxes land
+        in the ring even when a body advanced them blind."""
+        if not self.game.link.connected:
+            return {"error": "game not connected"}
+        st = self.game.state()
+        box_open = st.get("msg_mode", 0) != 0
+        msg = st.get("message")
+        body: dict = {"open": box_open}
+        if box_open and msg is None:
+            body["blind"] = ("instrument predates the dialogue sense — "
+                             "rebuild SoH with the 2026-08-04 dojo patch")
+        elif msg is not None:
+            body["current"] = {k: msg[k] for k in
+                               ("text", "state", "text_id", "choices",
+                                "choice_index", "wide") if k in msg}
+        body["recent"] = self.runtime.dialogue_recent()
+        return body
+
+    def _menu_items_view(self) -> dict:
+        """oot://menu/items: the items subscreen as a document — held
+        items by slot with meaningful ammo, and what sits on B/C."""
+        if not self.game.link.connected:
+            return {"error": "game not connected"}
+        st = self.game.state()
+        inv = st.get("inventory")
+        if inv is None:
+            return {"blind": "instrument predates the menu senses — "
+                             "rebuild SoH with the 2026-08-04 dojo patch"}
+        items, ammo = inv.get("items") or [], inv.get("ammo") or []
+        held = []
+        for slot, item in enumerate(items):
+            if item == senses.ITEM_NONE:
+                continue
+            entry = {"slot": slot, "item": senses.item_name(item)}
+            if slot in senses.AMMO_SLOTS and slot < len(ammo):
+                entry["ammo"] = ammo[slot]
+            held.append(entry)
+        equips = st.get("equips") or {}
+        buttons = {key: senses.item_name(equips[key])
+                   for key in ("b", "c_left", "c_down", "c_right")
+                   if equips.get(key) not in (None, senses.ITEM_NONE)}
+        return {"items": held, "buttons": buttons}
+
+    def _menu_equipment_view(self) -> dict:
+        """oot://menu/equipment: worn + owned gear by name (the masks ride
+        the wire's equips block; senses.equipment_view is the decode)."""
+        if not self.game.link.connected:
+            return {"error": "game not connected"}
+        equips = self.game.state().get("equips")
+        if equips is None or "worn" not in equips:
+            return {"blind": "instrument predates the equipment sense — "
+                             "rebuild SoH with the 2026-08-04 dojo patch"}
+        return senses.equipment_view(equips)
 
     def _journal_tail(self, n: int = 200):
         path = self.log.persist_path

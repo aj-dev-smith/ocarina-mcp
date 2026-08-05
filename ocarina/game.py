@@ -603,11 +603,16 @@ class Game:
         Fail fast and name the real blocker instead; dismissing it is the
         mind's call (dialogue_advance), never the legs'. Found live on
         the sixth flight: Navi's skullwalltula lecture opened mid-leg
-        and ate the entire 12 s grab window."""
-        if self.state().get("msg_mode", 0) != 0:
+        and ate the entire 12 s grab window. As of 0.8.0 the error
+        QUOTES the box when the wire carries its text (docs/27) — the
+        blocker gets a name, not just a category."""
+        st = self.state()
+        if st.get("msg_mode", 0) != 0:
+            text = (st.get("message") or {}).get("text")
+            quote = f'; the box says: "{text}"' if text else ""
             raise TraverseFailed(
                 f"a message box opened {when} — input is frozen until it "
-                "is read; dialogue_advance, then retry the leg")
+                f"is read; dialogue_advance, then retry the leg{quote}")
 
     def _dodge_wedge(self, x: float, z: float, side: int, magnitude: int,
                      graph=None, rid=None) -> bool:
@@ -842,6 +847,51 @@ class Game:
             self.press("A", frames=3)
             time.sleep(0.25)
         return self.state().get("msg_mode", 0) == 0
+
+    def _poll_staged_op(self, payload: dict, timeout: float) -> dict:
+        """Drive one of the instrument's staged main-thread ops (docs/27:
+        `save`, `assign_c`). The Sail thread cannot touch game state, so
+        the op returns try_again until the frame hook has run its gates
+        and either performed or refused BY NAME — this polls it through.
+        An instrument without the op answers "unknown dojo op"; that is
+        surfaced as the rebuild message, never retried into a hang."""
+        deadline = time.monotonic() + timeout
+        while True:
+            res = self.link.request(payload)
+            status = res.get("status")
+            if status == "success":
+                return {"ok": True, **{k: v for k, v in res.items()
+                                       if k not in ("type", "id", "status")}}
+            err = str(res.get("error", ""))
+            if "unknown dojo op" in err:
+                return {"ok": False,
+                        "error": f"this instrument predates the "
+                                 f"{payload.get('op')!r} op — rebuild SoH "
+                                 f"with the 2026-08-04 dojo patch"}
+            if status != "try_again":
+                return {"ok": False, "error": err or "op failed"}
+            if time.monotonic() > deadline:
+                return {"ok": False,
+                        "error": f"{payload.get('op')} request pending past "
+                                 f"{timeout:.0f}s — is the game processing "
+                                 f"frames?"}
+            time.sleep(0.1)
+
+    def save_game(self, timeout: float = 3.0) -> dict:
+        """Game-native save: the instrument calls Play_PerformSave — the
+        exact function the pause menu's Yes button calls — behind the
+        pause-legality gate (legal exactly when a player could have
+        paused and pressed B; docs/27 call 1). Refusals come back named."""
+        return self._poll_staged_op({"type": "dojo", "op": "save"}, timeout)
+
+    def assign_c(self, item_id: int, button: int, timeout: float = 3.0) -> dict:
+        """Put an inventory item on a C button (0=C-left, 1=C-down,
+        2=C-right) via the item subscreen's own commit, its own legality
+        gates included (docs/27). Verify against state()['equips'] —
+        the write is the game's, the proof is the wire's."""
+        return self._poll_staged_op(
+            {"type": "dojo", "op": "assign_c",
+             "item": int(item_id), "button": int(button)}, timeout)
 
     def z_target(self) -> None:
         self.press("Z", frames=4)

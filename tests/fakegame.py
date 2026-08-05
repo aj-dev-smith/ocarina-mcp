@@ -60,6 +60,12 @@ class FakeGame:
         # it into nametags" half only the real game can prove.
         self.overlay_labels: list[dict] = []
         self.overlay_applies = 0
+        # docs/27 instrument state: C-button assignments (ITEM_NONE empty),
+        # nut count, and the staged-save round trip.
+        self.equips_c = [0xFF, 0xFF, 0xFF]
+        self.nuts = 5
+        self.saves = 0
+        self.save_pending = False
 
     def reset_world(self) -> None:
         self.player = {"x": 0.0, "z": 0.0, "health": 48}  # 3 hearts
@@ -172,7 +178,7 @@ class FakeGame:
                     # the start (sight bits per the 2026-08-02 instrument).
                     "drawn": True, "sighted": True,
                 })
-            return {
+            state = {
                 "save_loaded": True, "scene": 85, "health": max(p["health"], 0),
                 "health_capacity": 48, "magic": 0, "rupees": 0, "is_child": True,
                 "msg_mode": 0, "paused": self.paused, "frame": self.frame,
@@ -182,7 +188,18 @@ class FakeGame:
                            "state_flags1": PLAYER_STATE1_DEAD if dead else 0,
                            "state_flags2": 0, "invincibility": 0},
                 "actors": actors, "actor_count_total": len(actors),
+                # The 2026-08-04 instrument blocks (docs/27). Sticks and
+                # nuts in slots 0/1, everything else empty; equips mirror
+                # what assign_c wrote.
+                "pause": {"state": 0, "page": 0},
+                "equips": {"b": 0xFF, "c_left": self.equips_c[0],
+                           "c_down": self.equips_c[1],
+                           "c_right": self.equips_c[2],
+                           "worn": 0x11, "owned": 0x11},
+                "inventory": {"items": [0x00, 0x01] + [0xFF] * 22,
+                              "ammo": [3, self.nuts] + [0] * 14},
             }
+            return state
 
     def handle_hud(self, payload: dict) -> dict:
         sub = payload.get("sub", "set")
@@ -275,6 +292,26 @@ class FakeGame:
                 self.gameplay_frames += int(payload.get("n", 1))
         elif op == "events":
             pass  # accepted, no-op in the fake
+        elif op == "save":
+            # The real op stages onto the frame hook and answers try_again
+            # first; the fake models one round of that so the poll loop's
+            # try_again path is exercised over real pipes.
+            if not self.save_pending:
+                self.save_pending = True
+                res["status"] = "try_again"
+            else:
+                self.save_pending = False
+                self.saves += 1
+                res["saved"] = True
+        elif op == "assign_c":
+            button = payload.get("button", -1)
+            if not 0 <= button <= 2:
+                res["status"] = "failure"
+                res["error"] = "button must be 0 (C-left), 1 (C-down), or 2 (C-right)"
+            else:
+                self.equips_c[button] = payload.get("item")
+                res["item"] = payload.get("item")
+                res["button"] = button
         else:
             res["status"] = "failure"
             res["error"] = f"unknown op {op}"

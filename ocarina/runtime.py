@@ -97,6 +97,15 @@ class MachineRuntime:
         self.sightings = senses.Sightings()
         self._sight_warned = False
         self._truncation_warned_scene = object()   # sentinel: no scene judged yet
+        # The dialogue fold's state (docs/27): open/closed edge, the last
+        # box narrated (so 20 Hz doesn't re-narrate a standing box), the
+        # recent-texts ring oot://dialogue serves, and the once-only
+        # old-instrument / wide-text diagnostics.
+        self._dialogue_open_prev = False
+        self._dialogue_last_key = None
+        self._dialogue_recent: list = []
+        self._dialogue_blind_warned = False
+        self._dialogue_wide_warned = False
 
         self._lock = threading.RLock()
         self._cooldowns: dict = {}      # transition name -> monotonic last-match
@@ -206,6 +215,7 @@ class MachineRuntime:
             self._drain_wire()
             self._fold_sightings()
             self._fold_place()
+            self._fold_dialogue()
             self._finish_behavior()
             self._push_overlay(now)
             if self._wake is not None:
@@ -345,6 +355,70 @@ class MachineRuntime:
                 self._dispatch(ev)
         for text in self.place.drain_diagnostics():
             self._record({"event": "diagnostic", "text": text})
+
+    def _fold_dialogue(self) -> None:
+        """The dialogue sense's narration (docs/27): a `ui` cue per box —
+        `dialogue_opened` with the text once it is readable (the wire
+        sends text null while the box is still opening), `dialogue_closed`
+        on close — plus the recent-texts ring oot://dialogue serves. The
+        `ui` category has existed in the grammar since it was written;
+        these are its first producers. Every box lands in the ring even
+        when a body advances it blind — that is how the Dungeon Map
+        mislabel (two flights of blind get-item boxes) becomes
+        impossible to repeat."""
+        st = self._last_state
+        if st is None or not st.get("save_loaded", False):
+            return
+        box_open = st.get("msg_mode", 0) != 0
+        msg = st.get("message")
+        if box_open and msg is None:
+            # An open box with no message block: the instrument predates
+            # the dialogue sense. Blind with a diagnostic, never silent.
+            if not self._dialogue_blind_warned:
+                self._dialogue_blind_warned = True
+                self._record({"event": "diagnostic",
+                              "text": "a message box is open but the wire "
+                                      "carries no `message` block — this "
+                                      "instrument predates the dialogue sense "
+                                      "(rebuild SoH with the 2026-08-04 dojo "
+                                      "patch); dialogue is BLIND, deliberately, "
+                                      "rather than silent"})
+            self._dialogue_open_prev = box_open
+            return
+        if box_open and msg is not None:
+            if msg.get("wide") and not self._dialogue_wide_warned:
+                self._dialogue_wide_warned = True
+                self._record({"event": "diagnostic",
+                              "text": "wide-text (JPN) message boxes cannot be "
+                                      "decoded — dialogue text absent for this "
+                                      "language, flagged not faked"})
+            if msg.get("text") is not None:
+                key = (msg.get("text_id"), msg.get("text"))
+                if key != self._dialogue_last_key:
+                    self._dialogue_last_key = key
+                    entry = {"text_id": msg.get("text_id"),
+                             "text": msg.get("text"),
+                             "scene": st.get("scene")}
+                    ev = {"event": "ui", "cue": "dialogue_opened",
+                          "text": msg.get("text")}
+                    if "choices" in msg:
+                        entry["choices"] = msg.get("choices")
+                        ev["choices"] = msg.get("choices")
+                    self._dialogue_recent.append(entry)
+                    del self._dialogue_recent[:-20]
+                    self._record(ev)
+                    self._dispatch(ev)
+        if not box_open and self._dialogue_open_prev:
+            self._dialogue_last_key = None
+            ev = {"event": "ui", "cue": "dialogue_closed"}
+            self._record(ev)
+            self._dispatch(ev)
+        self._dialogue_open_prev = box_open
+
+    def dialogue_recent(self) -> list:
+        """The recent-texts ring (newest last) for oot://dialogue."""
+        with self._lock:
+            return [dict(e) for e in self._dialogue_recent]
 
     def _finish_behavior(self) -> None:
         run = self.executor.finish()

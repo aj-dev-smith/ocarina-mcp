@@ -30,6 +30,8 @@ class StubLink:
         self.gameplay_frames = 0
         self._events: list = []
         self.requests: list = []
+        self.saves = 0                  # completed `save` ops (docs/27)
+        self.save_script: list = []     # queued save-op replies for tests
         # Mutable world the tests poke at; merged into every state reply.
         self.world = {
             "save_loaded": True, "scene": 85, "health": 48,
@@ -70,5 +72,29 @@ class StubLink:
             self.paused = bool(payload.get("on", True))
         elif op == "scan":
             res["rays"] = []
-        # pad / events / tick / hud: accepted, no-op
+        elif op == "pad":
+            # Choice-cursor model (docs/27): a vertical stick nudge moves
+            # message.choice_index the way Message_HandleChoiceSelection
+            # does — up (y+) decrements, down (y-) increments, clamped.
+            stick = payload.get("stick")
+            msg = self.world.get("message")
+            if (not payload.get("clear") and stick and msg
+                    and isinstance(msg.get("choice_index"), int)):
+                top = max(len(msg.get("choices") or []) - 1, 0)
+                if stick[1] <= -30:
+                    msg["choice_index"] = min(top, msg["choice_index"] + 1)
+                elif stick[1] >= 30:
+                    msg["choice_index"] = max(0, msg["choice_index"] - 1)
+        elif op == "save":
+            # Scriptable: tests queue {"status": ...} dicts; default saves.
+            scripted = self.save_script.pop(0) if self.save_script else {"saved": True}
+            res.update(scripted)
+            if res.get("status") == "success" or "status" not in scripted:
+                self.saves += 1
+        elif op == "assign_c":
+            item, button = payload.get("item"), payload.get("button")
+            key = ("c_left", "c_down", "c_right")[button]
+            self.world.setdefault("equips", {})[key] = item
+            res["item"], res["button"] = item, button
+        # events / tick / hud: accepted, no-op
         return res

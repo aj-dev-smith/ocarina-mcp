@@ -159,8 +159,11 @@ class TestResources(ServerCase):
         self.assertTrue(any(e["event"] == "entered" for e in body))
 
     def test_not_yet_resources(self):
-        body = self.read("oot://dialogue")
+        # map/quest stay honest not-yets; dialogue/items/equipment
+        # graduated in 0.8.0 (docs/27).
+        body = self.read("oot://menu/map")
         self.assertIn("not_yet", body)
+        self.assertNotIn("not_yet", self.read("oot://dialogue"))
 
 
 class TestWakeChannel(ServerCase):
