@@ -1,0 +1,390 @@
+# The Kokiri flight (ninth, 2026-08-05): 0.9.0 acceptance — treehouse
+# to the Deku Tree's mouth (dojo docs/28). New repo = new kid: no
+# inherited seen_kinds, so every Kokiri first-sighting narrates novel.
+#
+# Boot machine only. Mission bodies (crawl_probe, crawl_through, the
+# rupee loop) get authored mid-flight against live probe answers and
+# hot-swapped in via reload_machine, per the ratified build order.
+version: 1
+initial: boot
+
+nodes:
+  boot:
+    behavior: boot_from_title_v1
+    transitions:
+      - name: booted
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal save file loaded, standing watch in the treehouse
+          - goto stand_watch
+      - name: boot-retry
+        on: behavior_done
+        do: goto boot
+  stand_watch:
+    behavior: stand_watch_v1
+    transitions:
+      - name: keep-watching
+        on: behavior_done
+        do: goto stand_watch
+  probe_doors:
+    behavior: door_probe_v1
+    transitions:
+      # a BehaviorAbort lands as behavior_done with outcome 'abort';
+      # behavior_aborted is external preemption only (learned live)
+      - name: probe-report
+        on: behavior_done
+        where: outcome == 'abort'
+        do: wake door probe says {detail}
+        default: hold probe report delivered
+      - name: probe-done
+        on: behavior_done
+        do: goto stand_watch
+  leave_house:
+    behavior: leave_house_v1
+    transitions:
+      - name: outside
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal out of the house, on the balcony
+          - goto descend_balcony
+      - name: stuck-inside
+        on: behavior_done
+        do: wake leave_house did not succeed
+        default: hold waiting on the mind
+      - name: leave-abort
+        on: behavior_aborted
+        do: wake leave_house aborted, {detail}
+        default: hold waiting on the mind
+  descend_balcony:
+    behavior: descend_balcony_v1
+    transitions:
+      - name: grounded
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal standing on the forest floor
+          - wake on the forest floor, ready for the next leg
+        default: hold standing at the ladder base
+      - name: descend-fail
+        on: behavior_done
+        do: wake descent did not land on the floor
+        default: hold waiting on the mind
+      - name: descend-abort
+        on: behavior_aborted
+        do: wake descent aborted, {detail}
+        default: hold waiting on the mind
+
+  goto_crawl:
+    behavior: goto_crawl_v3
+    transitions:
+      - name: at-hole
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal standing at the crawl hole mouth
+          - goto crawl_through
+      - name: goto-crawl-fail
+        on: behavior_done
+        do: wake goto_crawl ended off the mark
+        default: hold waiting on the mind
+      - name: goto-crawl-abort
+        on: behavior_aborted
+        do: wake goto_crawl aborted, {detail}
+        default: hold waiting on the mind
+  probe_crawl:
+    behavior: crawl_probe_v2
+    transitions:
+      - name: crawl-report
+        on: behavior_done
+        where: outcome == 'abort'
+        do: wake crawl probe says {detail}
+        default: hold probe report delivered
+      - name: crawl-probe-done
+        on: behavior_done
+        do: goto stand_watch
+  crawl_through:
+    behavior: crawl_through_v1
+    transitions:
+      - name: through
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal through the crawl tunnel
+          - goto collect_rupees
+      - name: crawl-fail
+        on: behavior_done
+        do: wake crawl_through ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: crawl-abort
+        on: behavior_aborted
+        do: wake crawl_through preempted, {detail}
+        default: hold waiting on the mind
+  open_chest:
+    behavior: open_chest_v4
+    transitions:
+      - name: chest-open
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal the sword chest is open
+          - wake chest opened — check the inventory and dialogue ring
+        default: hold beside the open chest
+      - name: chest-fail
+        on: behavior_done
+        do: wake open_chest ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: chest-preempt
+        on: behavior_aborted
+        do: wake open_chest preempted, {detail}
+        default: hold waiting on the mind
+  collect_rupees:
+    behavior: collect_rupees_v3
+    transitions:
+      - name: sweep-report
+        on: behavior_done
+        where: outcome == 'abort'
+        do: wake rupee sweep says {detail}
+        default: hold sweep report delivered
+      - name: sweep-done
+        on: behavior_done
+        do: goto stand_watch
+  crawl_back:
+    behavior: crawl_back_v1
+    transitions:
+      - name: back-on-terrace
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal back through the crawl, on the village terrace
+          - goto farm_shield_fund
+      - name: crawl-back-fail
+        on: behavior_done
+        do: wake crawl_back ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: crawl-back-preempt
+        on: behavior_aborted
+        do: wake crawl_back preempted, {detail}
+        default: hold waiting on the mind
+  farm_shield_fund:
+    behavior: farm_shield_fund_v2
+    transitions:
+      - name: funded
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal shield fund raised, 40 rupees in the wallet
+          - wake shield funded — ready for the shop
+        default: hold holding the fund
+      # dry patch -> respawn the grass by cycling through a house
+      - name: farm-dry
+        on: behavior_done
+        do:
+          - journal patch dry, {detail} — cycling a house to respawn
+          - goto enter_building
+      - name: farm-preempt
+        on: behavior_aborted
+        do: wake farming preempted, {detail}
+        default: hold waiting on the mind
+  leave_building:
+    behavior: leave_building_v2
+    transitions:
+      - name: back-outside
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal back out in the village
+          - goto enter_shop
+      - name: leave-building-fail
+        on: behavior_done
+        do: wake leave_building ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: leave-building-preempt
+        on: behavior_aborted
+        do: wake leave_building preempted, {detail}
+        default: hold waiting on the mind
+  enter_building:
+    behavior: enter_building_v1
+    transitions:
+      - name: inside
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal inside, new scene
+          - goto leave_building
+      - name: enter-fail
+        on: behavior_done
+        do: wake enter_building ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: enter-preempt
+        on: behavior_aborted
+        do: wake enter_building preempted, {detail}
+        default: hold waiting on the mind
+  enter_shop:
+    behavior: enter_shop_v2
+    transitions:
+      - name: in-shop
+        on: behavior_done
+        where: outcome == 'success'
+        do: wake inside the shop candidate — verify the scene before buying
+        default: hold standing inside
+      - name: enter-shop-fail
+        on: behavior_done
+        do: wake enter_shop ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: enter-shop-preempt
+        on: behavior_aborted
+        do: wake enter_shop preempted, {detail}
+        default: hold waiting on the mind
+  talk_to_shopkeeper:
+    behavior: talk_to_shopkeeper_v1
+    transitions:
+      - name: at-counter
+        on: behavior_done
+        where: outcome == 'success'
+        do: wake at the counter, shop dialogue open — buy when ready
+        default: hold at the counter
+      - name: counter-fail
+        on: behavior_done
+        do: wake talk_to_shopkeeper ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: counter-preempt
+        on: behavior_aborted
+        do: wake talk_to_shopkeeper preempted, {detail}
+        default: hold waiting on the mind
+  leave_shop:
+    behavior: leave_shop_v1
+    transitions:
+      - name: out-of-shop
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal out of the shop, shield on the back
+          - goto goto_deku_mouth
+      - name: leave-shop-fail
+        on: behavior_done
+        do: wake leave_shop ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: leave-shop-preempt
+        on: behavior_aborted
+        do: wake leave_shop preempted, {detail}
+        default: hold waiting on the mind
+  goto_deku_mouth:
+    behavior: goto_deku_mouth_v1
+    transitions:
+      - name: at-the-mouth
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal standing at the Deku Tree's mouth
+          - wake AT THE DEKU TREE'S MOUTH — the mission endpoint
+        default: hold at the mouth
+      - name: trail-fail
+        on: behavior_done
+        do: wake goto_deku_mouth ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: trail-preempt
+        on: behavior_aborted
+        do: wake goto_deku_mouth preempted, {detail}
+        default: hold waiting on the mind
+  enter_deku:
+    behavior: enter_deku_v1
+    transitions:
+      - name: inside-the-tree
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal inside the Great Deku Tree
+          - goto seek_baba
+      - name: enter-deku-fail
+        on: behavior_done
+        do: wake enter_deku ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: enter-deku-preempt
+        on: behavior_aborted
+        do: wake enter_deku preempted, {detail}
+        default: hold waiting on the mind
+  seek_baba:
+    behavior: seek_baba_v1
+    transitions:
+      - name: baba-found
+        on: behavior_done
+        where: outcome == 'success'
+        do: goto approach_baba
+      - name: room-clear-report
+        on: behavior_done
+        where: outcome == 'abort'
+        do: wake seek says {detail}
+        default: hold seek report delivered
+      - name: seek-fail
+        on: behavior_done
+        do: wake seek_baba ended {outcome}, {detail}
+        default: hold waiting on the mind
+  approach_baba:
+    behavior: approach_baba_v1
+    transitions:
+      - name: in-engage-range
+        on: behavior_done
+        where: outcome == 'success'
+        do: goto kill_baba
+      - name: approach-fail
+        on: behavior_done
+        do: wake approach_baba ended {outcome}, {detail}
+        default: hold waiting on the mind
+      - name: approach-preempt
+        on: behavior_aborted
+        do: wake approach preempted, {detail}
+        default: hold waiting on the mind
+  kill_baba:
+    behavior: deku_baba_v4
+    transitions:
+      - name: baba-down
+        on: behavior_done
+        where: outcome == 'success'
+        do:
+          - journal a deku baba is down
+          - goto seek_baba
+      - name: kill-fail
+        on: behavior_done
+        do: wake deku_baba_v4 ended {outcome} — mind's call
+        default: hold waiting on the mind
+      - name: kill-preempt
+        on: behavior_aborted
+        do: wake kill preempted, {detail}
+        default: hold waiting on the mind
+  sweep_chests:
+    behavior: sweep_chests_v3
+    transitions:
+      - name: chest-sweep-report
+        on: behavior_done
+        where: outcome == 'abort'
+        do: wake chest sweep says {detail}
+        default: hold sweep report delivered
+      - name: chest-sweep-done
+        on: behavior_done
+        do: goto stand_watch
+
+transitions:
+  - name: novel-actor
+    on: spawn
+    where: novel == 1
+    do: journal first sighting of a {kind}
+  - name: entered-region
+    on: place
+    where: cue == 'region_entered'
+    do: journal now in {region}
+  # chip damage must not preempt the body that is escaping the hazard
+  # (the boulder hit-freeze-restart loop, 4 hits): journal the scratch,
+  # wake only when hearts are actually low
+  - name: took-scratch
+    on: damage_taken
+    where: hearts_after >= 1.5
+    do: journal took a scratch, {hearts_after} hearts
+    cooldown_s: 5
+  - name: took-damage
+    on: damage_taken
+    where: hearts_after < 1.5
+    do: wake took damage, now at {hearts_after} hearts
+    default: hold ouch
+    cooldown_s: 15
