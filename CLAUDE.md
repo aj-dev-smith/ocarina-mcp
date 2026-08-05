@@ -3,7 +3,7 @@
 You are in the ocarina repo: the MCP server piece of OoT Bench.
 **`SURFACE.md` and `MACHINE.md` are BLESSED (AJ, 2026-08-01)** — the
 contract is in force, ratified-in-place clarifications included (see
-MACHINE.md's status block), and the server has flown **six times**.
+MACHINE.md's status block), and the server has flown **eight times**.
 First light (0.1.0, 2026-08-01) proved the server flies: boot via a
 behavior, geometry-sense wandering, the channel wake path, a live
 hot-swap. Second light (0.2.x–0.3.0, same day) proved the **loop**:
@@ -28,6 +28,15 @@ the server itself (three traverse fixes no test had caught), and the
 bench's **first death** — the vine guards a probe measured as
 stationary were sleeping patrols, and Link died parked at 0.5 hearts
 inside one's wake-up radius. 3F remains unreached; the mission is open.
+The seventh (2026-08-04, AJ's **free-play session** — "do whatever you
+want"): the ring chest re-taken by named traverse, the bench's first
+deliberate JUMP (the 2F walkway gap, lab-measured), its first DOOR, a
+full video-take run for AJ's recording — and its second death (the
+health-critical wake's HOLD default fired while the mind deliberated;
+a freeze is not indefinite shelter). The chest's prize was AJ's
+eyewitness correction: the DUNGEON MAP, not the slingshot. The eighth
+(2026-08-04, same evening) built and acceptance-flew **0.8.0** — see
+the state of play below.
 Session records:
 `../oot-dojo/docs/20-first-light-2026-08-01.md`, `docs/21-second-light-
 2026-08-01.md`, `docs/22-sight-gating-2026-08-02.md` (design →
@@ -35,8 +44,11 @@ ratification → verification, one file), `docs/23-fourth-flight-
 2026-08-02.md`, `docs/24-fifth-flight-2026-08-03.md` (the nav design
 conversation + the lab + the flight, one file — read it before touching
 anything navigation-shaped), `docs/25-the-place-sense-2026-08-03.md`
-(the ratified design), and `docs/26-sixth-flight-2026-08-04.md` (the
-acceptance flight — read it before touching traverse).
+(the ratified design), `docs/26-sixth-flight-2026-08-04.md` (the
+acceptance flight — read it before touching traverse; carries the
+Dungeon Map erratum), and `docs/27-dialogue-and-saving-2026-08-04.md`
+(0.8.0: designed, ratified, built, and acceptance-flown in one day —
+also the only written record of the seventh session's evidence).
 
 **Read first:** `SURFACE.md` and `MACHINE.md`, then
 `../oot-dojo/docs/19-senses-and-the-machine-2026-07-31.md` (the substance)
@@ -48,7 +60,7 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (164; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (192; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame, and
   real-o2r place-sense pins that skip if oot.o2r is absent).
 - Run: `python3 -m ocarina --repo <save-file-repo> --o2r
@@ -66,7 +78,13 @@ silently-never-fires transition shape, twice).
   locate probe, and the journal of both MCP-direct flights;
   sixth-flight (still the same line) adds the place-flight bodies
   (refusal probe, spider probe, ascend_to_3f v1→v5 with post-mortems
-  in-file) and the acceptance flight's full journal, death included.
+  in-file) and the acceptance flight's full journal, death included;
+  seventh-flight (the same line, through the free-play session and the
+  0.8.0 acceptance) adds the free-play bodies (goto_ring by name,
+  leap_gap, enter_door with the blind-box discipline, door_census,
+  goto_entrance), the chest-already-open guard, and the journal
+  carrying the second death, the first game-native save, and the first
+  dialogue ever read.
 - **`lab/navgraph/`** — the place-sense feasibility lab (2026-08-03,
   fifth flight): stdlib pipeline that parses scene collision out of
   SoH's `oot.o2r`, flood-fills it into a region graph with typed climb
@@ -103,7 +121,43 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play after the sixth flight (server at 0.7.1; the place sense ACCEPTED)
+## State of play after the eighth flight (server at 0.8.0; dialogue, saving, and use_item LIVE)
+
+- **0.8.0 + THE SEVENTH AND EIGHTH FLIGHTS (2026-08-04, dojo docs/27 —
+  designed, ratified, built, and acceptance-flown in one day).** The
+  seventh was AJ's free-play session ("do whatever you want"): the ring
+  chest re-taken by ONE named traverse (start-position independent —
+  traverse obsoletes waypoint replay inside a mapped scene), the
+  bench's first deliberate JUMP (the 2F walkway gap, lab-measured at
+  ~100 units, 2-for-2), its first DOOR (enter_door_v1, with the blind
+  12×A box-clearing discipline and a false-success caught by AJ's
+  eyes), a scene door map by probe, a full video-take run — and the
+  SECOND DEATH: the health-critical wake's HOLD default fired (~5 min)
+  while the mind explained architecture, and the scrubs finished Link.
+  A freeze is NOT indefinite shelter; health-critical needs a retreat
+  REFLEX, not a hold. AJ's eyewitness also corrected the record: the
+  ring chest holds the DUNGEON MAP (docs/26 erratum), not the
+  slingshot. The eighth built docs/27's slate and flew it: **dialogue
+  text on the wire** (the `message` block; digest `dialogue` entity;
+  `ui` category's first producers; `oot://dialogue` with a recent ring;
+  traverse QUOTES the box it fails on; `dialogue_choose` stick-nudge
+  verified), **`save_game`** (Play_PerformSave behind the player's own
+  pause gate — the bench's first game-native save landed live), and
+  **`use_item(item)`** (the item subscreen's own C-assignment commit +
+  a real C press; nuts 5→4 on first use — the verb the scrub ambush
+  lacked). `oot://menu/items` + `oot://menu/equipment` are documents;
+  map/quest stay NOT_YET. Mid-session, AJ's eyewitness commissioned an
+  extra sense in under an hour: En_Box census entries carry the game's
+  own treasure flag as **`opened`** (a body had pressed A at an
+  already-open chest, twice) — spawn narration now says open/closed
+  and open_chest_v5 refuses in 0.1 s by name. The first dialogue
+  ocarina ever read was Navi saying its name: "Look, look, Claude! You
+  can see down below this web using [C-Up]!" Tests 164 → 192. NO
+  contract touch (everything implemented was already blessed).
+  Live-unexercised: `dialogue_choose` awaits a natural choice box.
+  **The heal-loop conversation (docs/26 felt-gap #1) is still the
+  standing next-session opener, now with two deaths behind it, and 3F
+  is still open.**
 
 - **0.7.1 + THE SIXTH FLIGHT (2026-08-04, dojo docs/26 — the
   acceptance flight, flown the morning after 0.7.0 was built).** The
@@ -246,13 +300,17 @@ silently-never-fires transition shape, twice).
   rate made visible).
 
 **Top open items** (details in `../oot-dojo/harness-backlog.md`; the
-sixth flight re-ranked this list by felt pain — docs/26 has the
-reasoning):
+sixth flight ranked this list by felt pain, docs/26 has the reasoning;
+0.8.0 CLOSED the old #5 — dialogue text — and the save_game half of
+#4's compound interest):
 
-1. **A HEAL LOOP.** Recovery hearts exist (baba kills, bushes) but no
-   body can safely farm them at low health — which is exactly when it
-   matters. The first death was downstream of this gap. Next session
-   opens here.
+1. **A HEAL LOOP — and the retreat REFLEX under it.** Recovery hearts
+   exist (baba kills, bushes) but no body can safely farm them at low
+   health — which is exactly when it matters. BOTH deaths are
+   downstream of this gap, and the second sharpened it: the
+   health-critical wake's `hold` default fired after ~5 min while the
+   mind deliberated. A freeze is not shelter; health-critical needs a
+   machine-side retreat reflex, not a hold. Next session opens here.
 2. **Descent.** `traverse` rightly refuses climbing down, but the
    refusal left Link COMMITTED to the ring with no path back but
    falling — a one-way map is a trap the mind walks into knowingly.
@@ -263,25 +321,31 @@ reasoning):
    (activation distance), and one of them killed Link. A sighted player
    sees a skullwalltula start to move; the census carries positions but
    not awake/asleep, and that gap manufactured a false belief with
-   fatal consequences.
+   fatal consequences. (The chest `opened` bit is this item's pattern
+   landed for props: the game's own flag, on the census, refusals by
+   name — do the same with actor wake state.)
 4. **Obstacle-aware ascend** — promote the sixth flight's retired
    spider-slalom (in `examples/sixth-flight/.../place_flight.py`) into
-   traverse; straight-up is not enough on guarded walls. Related: the
-   slingshot answer (kill the guard) compounds with `save_game`'s
-   NOT_YET — the fifth flight's slingshot chest died unsaved with its
-   process, and every session since has paid for it.
-5. **Dialogue text on the wire — now MOTOR-blocking.** A message box
-   freezes the pad (0.7.1 fails fast, but blind); Navi's lecture cost a
-   leg. The fifth flight advanced a get-item box blind; the sixth flew
-   a whole leg into one.
-6. **Screenshot on the wire.** Two AJ screenshots resolved in seconds
+   traverse; straight-up is not enough on guarded walls. The ranged
+   answer (kill the guard) now means TAKING the real slingshot first —
+   it is behind the 2F door (the ring chest was the Dungeon Map;
+   docs/26 erratum) — and with `save_game` live, what we take now
+   KEEPS.
+5. **Screenshot on the wire.** Two AJ screenshots resolved in seconds
    what probes argued about for minutes (the chest at the vine base;
-   the gap in the vines) — third flight running in which eyes were the
-   decisive instrument.
-7. `bgm_change` producer (enemy battle music on proximity — the game's
+   the gap in the vines) — and the eighth flight's chest impasse was
+   again resolved by AJ's eyes. Four flights running.
+6. `bgm_change` producer (enemy battle music on proximity — the game's
    own fair unseen-enemy channel), and **sight-gating for behaviours**
    (`game.actors()` is raw; seek.py filters the `sighted` bit by hand —
    that discipline wants to live in the surface).
+7. **Room-clear chain hygiene** (eighth flight): fetch_item chases
+   phantom drops — it walked Link into the atrium web hole TWICE (the
+   `fell` sense narrated both; a voidout costs half a heart). The
+   no-drop path needs an exit that doesn't wander. Related:
+   `dialogue_choose` is built but live-unexercised (first scrub or
+   shop), and the blind 12×A discipline in the free-play bodies can now
+   be made sighted (read the ring, journal the text, then advance).
 
 Then: prop pose/facing + affordance text (En_Box front = rot_y +
 0x8000; the A-icon's action text is presented truth); the removed
@@ -290,11 +354,11 @@ attacker identity on `damage_taken` (needs a wire-side patch;
 nearest-enemy-at-freeze is the documented workaround); Object_Kankyo
 filter; En_Item00 param-aware naming; the absence-semantics foot-gun
 lint (deferred); dojo-trial `approach_baba_v1`/`v2`, `climb_ladder_v1`,
-the fifth-flight navgraph family, and now the sixth-flight place-flight
-family (all UNGRADED). Still unexercised: **real idle-session channel
-delivery** — flights four through six drove synchronously and read
-wakes from the journal, so a wake pack has still never woken an idle
-Claude session on its own.
+the fifth-flight navgraph family, the sixth-flight place-flight family,
+and now the seventh-flight free-play family (all UNGRADED). Still
+unexercised: **real idle-session channel delivery** — flights four
+through eight drove synchronously and read wakes from the journal, so a
+wake pack has still never woken an idle Claude session on its own.
 
 ## Rules for this repo
 
