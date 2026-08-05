@@ -61,6 +61,51 @@ def two_floor_mesh() -> CollisionMesh:
     return mesh
 
 
+def seam_mesh(gap: float) -> CollisionMesh:
+    """Two floor slabs authored as separate sub-meshes whose shared corners
+    disagree by `gap` units — the shipped scenes' unwelded seam, in
+    miniature (Kokiri Forest's forest floor meets itself 1.0 unit off)."""
+    verts = [
+        (0, 0, 0), (200, 0, 0), (200, 0, 200), (0, 0, 200),              # 0-3
+        (200, gap, 0), (400, gap, 0), (400, gap, 200), (200, gap, 200),  # 4-7
+    ]
+    mesh = CollisionMesh(min_bounds=(0, 0, 0), max_bounds=(400, gap, 200))
+    mesh.vertices = verts
+    mesh.surface_types = [SurfaceType(data0=0, data1=0)]
+    for i, t in enumerate([(0, 1, 2), (0, 2, 3), (4, 5, 6), (4, 6, 7)]):
+        mesh.polys.append(Poly(index=i, type=0, va=t[0], vb=t[1], vc=t[2],
+                               normal=FLOOR_N, dist=0))
+    return mesh
+
+
+def terrain_ladder_mesh() -> CollisionMesh:
+    """One HUGE terrain triangle with a ladder standing in the middle of it
+    and a small platform at the top — the treehouse ladder, in miniature.
+    No floor vertex is anywhere near the ladder's base (the exterior
+    mesh-density trap): only a point-in-poly test can link the ground."""
+    verts = [
+        (-2000, 0, -2000), (2000, 0, -2000), (0, 0, 2000),        # 0-2 terrain
+        (-16, 0, 0), (16, 0, 0), (16, 200, 0), (-16, 200, 0),     # 3-6 ladder
+        (-50, 200, -100), (50, 200, -100),
+        (50, 200, -4), (-50, 200, -4),                            # 7-10 balcony
+    ]
+    mesh = CollisionMesh(min_bounds=(-2000, 0, -2000), max_bounds=(2000, 200, 2000))
+    mesh.vertices = verts
+    mesh.surface_types = [
+        SurfaceType(data0=0, data1=0),          # plain floor
+        SurfaceType(data0=2 << 21, data1=0),    # wall type 2 -> ladder flag
+    ]
+    tris = [
+        (0, (0, 1, 2), FLOOR_N),                                  # the terrain
+        (0, (7, 8, 9), FLOOR_N), (0, (7, 9, 10), FLOOR_N),        # the balcony
+        (1, (3, 4, 5), WALL_N), (1, (3, 5, 6), WALL_N),           # the ladder
+    ]
+    for i, (t, (a, b, c), n) in enumerate(tris):
+        mesh.polys.append(Poly(index=i, type=t, va=a, vb=b, vc=c,
+                               normal=n, dist=0))
+    return mesh
+
+
 LOWER = "test:r@150,0,100"
 UPPER = "test:r@100,200,300"
 VINE = "test:vine@100,0,200"
@@ -101,6 +146,48 @@ class TestDistillIdentity(unittest.TestCase):
         drops = [e for e in g["candidate_edges"] if e["kind"] == "drop"]
         self.assertTrue(drops, "upper->lower should be a drop candidate")
         self.assertTrue(all(e["candidate"] for e in g["candidate_edges"]))
+
+
+class TestSeamWelding(unittest.TestCase):
+    """An unwelded seam is an invisible wall down the middle of a room:
+    the two halves flood-fill as separate, non-adjacent regions and no
+    route crosses. Welding within tolerance heals it — but a tolerance
+    that fuses two REAL surfaces would invent floor that isn't there, so
+    both directions are pinned."""
+
+    def test_a_one_unit_seam_heals_into_one_region(self):
+        g = distill(seam_mesh(1.0))
+        self.assertEqual(len(g["regions"]), 1,
+                         "a 1-unit authoring seam must not split the floor")
+        self.assertEqual(g["regions"][0]["polys"], 4)
+
+    def test_a_real_step_still_separates(self):
+        g = distill(seam_mesh(4.0))
+        self.assertEqual(len(g["regions"]), 2,
+                         "welding must never fuse two genuinely distinct "
+                         "surfaces — that would invent floor")
+
+    def test_welding_does_not_move_geometry_it_does_not_touch(self):
+        g = distill(seam_mesh(4.0))
+        self.assertEqual(g["vertices"], list(seam_mesh(4.0).vertices),
+                         "no near-duplicates: the vertex list is untouched")
+
+
+class TestClimbLinkingOnCoarseTerrain(unittest.TestCase):
+    def test_column_links_to_the_floor_it_stands_on(self):
+        # Vertex proximity is a mesh-density assumption: outdoors, one
+        # terrain triangle can be thousands of units across and its
+        # corners are nowhere near the ladder. Standing ON the surface is
+        # the honest predicate (Kokiri Forest's treehouse ladder had
+        # from=[] until this test existed — Link's own front door).
+        g = distill(terrain_ladder_mesh())
+        self.assertEqual(len(g["climb_edges"]), 1)
+        e = g["climb_edges"][0]
+        self.assertEqual(e["kind"], "ladder")
+        self.assertTrue(e["linked"], "a ladder with no ground is unusable")
+        names = {r["id"]: r["name"] for r in g["regions"]}
+        self.assertEqual([names[i] for i in e["from"]], ["r@0,0,-670"])
+        self.assertEqual([names[i] for i in e["to"]], ["r@0,200,-50"])
 
 
 class TestPlaceGraph(unittest.TestCase):
@@ -464,6 +551,61 @@ class TestRealYdanGraph(unittest.TestCase):
                                   "vine@120,0,-300")
         self.assertEqual(leg["direction"], "up")
         self.assertEqual(leg["top_y"], 280)
+
+
+@unittest.skipUnless(O2R.exists(), "SoH oot.o2r not present on this machine")
+class TestRealSpot04Graph(unittest.TestCase):
+    """Kokiri Forest, the bench's first overworld map (dojo docs/28 §4).
+    The recon found it distilling but NOT motor-grade: the forest floor
+    seam-split into non-adjacent halves, and the treehouse ladder — Link's
+    own front door — unlinked to the ground. Both are pinned here by
+    stable name, exactly as the ydan geography is above."""
+
+    SCENE = 0x55
+    FOREST_FLOOR = "spot04:r@-100,10,220"
+    BALCONY = "spot04:r@-30,100,1100"
+    LADDER = "spot04:ladder@-30,-80,1000"
+    #: A corner where two sub-meshes meet 1.0 unit apart ([-701,0,-301] vs
+    #: [-701,1,-301]) — the seam that used to cut the forest in two.
+    SEAM_WEST = (-769.3, -5.0, -255.0)      # was the 22-poly orphan half
+    SEAM_EAST = (-651.7, 0.0, -187.7)       # was the 124-poly main half
+
+    def setUp(self):
+        self.ps = PlaceSense(O2R)
+        self.g = self.ps.graph_for(self.SCENE)
+        self.assertIsNotNone(self.g)
+
+    def test_the_forest_floor_is_one_region(self):
+        west = self.g.locate(*self.SEAM_WEST)
+        east = self.g.locate(*self.SEAM_EAST)
+        self.assertIsNotNone(west)
+        self.assertIsNotNone(east)
+        self.assertEqual(self.g.region_name(west[0]), self.FOREST_FLOOR)
+        self.assertEqual(self.g.region_name(east[0]), self.FOREST_FLOOR,
+                         "the seam at [-701,0,-301] must be welded: two "
+                         "halves of one floor are one region, or nothing "
+                         "can walk across the forest")
+        self.assertNotIn("spot04:r@-150,10,210", self.g.by_name,
+                         "the split-off half must be gone, not renamed")
+        self.assertEqual(self.g.by_name[self.FOREST_FLOOR]["polys"], 149)
+
+    def test_the_treehouse_ladder_is_linked_to_ground_and_balcony(self):
+        e = self.g.edge_by_name.get(self.LADDER)
+        self.assertIsNotNone(e, "the treehouse ladder vanished from the map")
+        self.assertTrue(e["linked"], "a ladder with no ground is unusable")
+        names = lambda ids: [self.g.region_name(self.g.regions[i]) for i in ids]
+        self.assertEqual(names(e["from"]), [self.FOREST_FLOOR])
+        self.assertEqual(names(e["to"]), [self.BALCONY])
+
+    def test_traverse_resolves_the_ladder_from_the_forest_floor(self):
+        # The mission's first leg: standing in the forest, go home.
+        leg = self.ps.resolve_traverse(
+            state_at(-29, -80, 900, scene=self.SCENE), "ladder@-30,-80,1000")
+        self.assertEqual(leg["direction"], "up")
+        self.assertEqual(leg["top_y"], 115)
+        self.assertEqual([self.g.region_name(self.g.regions[i])
+                          for i in leg["to_rids"]], [self.BALCONY])
+        self.assertIsNotNone(leg["grab"], "the climb needs a base to aim at")
 
 
 if __name__ == "__main__":

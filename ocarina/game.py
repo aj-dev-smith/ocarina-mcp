@@ -848,13 +848,15 @@ class Game:
             time.sleep(0.25)
         return self.state().get("msg_mode", 0) == 0
 
-    def _poll_staged_op(self, payload: dict, timeout: float) -> dict:
+    def _poll_staged_op(self, payload: dict, timeout: float,
+                        patch: str = "2026-08-04") -> dict:
         """Drive one of the instrument's staged main-thread ops (docs/27:
-        `save`, `assign_c`). The Sail thread cannot touch game state, so
-        the op returns try_again until the frame hook has run its gates
-        and either performed or refused BY NAME — this polls it through.
-        An instrument without the op answers "unknown dojo op"; that is
-        surfaced as the rebuild message, never retried into a hang."""
+        `save`, `assign_c`; docs/28 adds `equip_gear`). The Sail thread
+        cannot touch game state, so the op returns try_again until the
+        frame hook has run its gates and either performed or refused BY
+        NAME — this polls it through. An instrument without the op answers
+        "unknown dojo op"; that is surfaced as the rebuild message (naming
+        the patch that adds THIS op), never retried into a hang."""
         deadline = time.monotonic() + timeout
         while True:
             res = self.link.request(payload)
@@ -867,7 +869,7 @@ class Game:
                 return {"ok": False,
                         "error": f"this instrument predates the "
                                  f"{payload.get('op')!r} op — rebuild SoH "
-                                 f"with the 2026-08-04 dojo patch"}
+                                 f"with the {patch} dojo patch"}
             if status != "try_again":
                 return {"ok": False, "error": err or "op failed"}
             if time.monotonic() > deadline:
@@ -892,6 +894,25 @@ class Game:
         return self._poll_staged_op(
             {"type": "dojo", "op": "assign_c",
              "item": int(item_id), "button": int(button)}, timeout)
+
+    def equip_gear(self, equip_type: int, value: int,
+                   timeout: float = 3.0) -> dict:
+        """Wear a piece of gear through the equipment subscreen's own
+        commit (0.9.0, dojo docs/28): `equip_type` is the row (0 sword,
+        1 shield, 2 tunic, 3 boots), `value` the 1-BASED piece within it.
+
+        A mechanical twin of assign_c: the op stages onto the frame hook,
+        runs the subscreen's own gates (CHECK_AGE_REQ_EQUIP,
+        CHECK_OWNED_EQUIP) and commit (Inventory_ChangeEquipment — the
+        sword row also writes the B button and infTable[29]), then calls
+        Player_SetEquipmentData itself, since no unpause will do it here.
+        Refusals come back NAMED. Verify against state()['equips']['worn']
+        — the write is the game's, the proof is the wire's, and that mask
+        is the exact predicate Mido's gate evaluates."""
+        return self._poll_staged_op(
+            {"type": "dojo", "op": "equip_gear",
+             "equip_type": int(equip_type), "value": int(value)},
+            timeout, patch="2026-08-05")
 
     def z_target(self) -> None:
         self.press("Z", frames=4)

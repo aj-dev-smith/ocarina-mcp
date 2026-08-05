@@ -3,7 +3,7 @@
 You are in the ocarina repo: the MCP server piece of OoT Bench.
 **`SURFACE.md` and `MACHINE.md` are BLESSED (AJ, 2026-08-01)** — the
 contract is in force, ratified-in-place clarifications included (see
-MACHINE.md's status block), and the server has flown **eight times**.
+MACHINE.md's status block), and the server has flown **nine times**.
 First light (0.1.0, 2026-08-01) proved the server flies: boot via a
 behavior, geometry-sense wandering, the channel wake path, a live
 hot-swap. Second light (0.2.x–0.3.0, same day) proved the **loop**:
@@ -35,8 +35,15 @@ full video-take run for AJ's recording — and its second death (the
 health-critical wake's HOLD default fired while the mind deliberated;
 a freeze is not indefinite shelter). The chest's prize was AJ's
 eyewitness correction: the DUNGEON MAP, not the slingshot. The eighth
-(2026-08-04, same evening) built and acceptance-flew **0.8.0** — see
-the state of play below.
+(2026-08-04, same evening) built and acceptance-flew **0.8.0**. The
+ninth (2026-08-05, dojo docs/28) built **0.9.0** (equip, buy,
+dialogue_choose live) in the morning and acceptance-flew it on a
+FRESH save file the same day: treehouse → sword via the crawlspace →
+40 rupees (an autonomous money loop) → the first live BUY → shield
+equipped → the trail → stopped at the Deku Tree's mouth as ordered —
+then, extended by AJ, INTO the tree and room 0 cleared (two babas,
+zero damage, deku_baba_v4 byte-identical to its dojo grading). Three
+game-native saves; no deaths. See the state of play below.
 Session records:
 `../oot-dojo/docs/20-first-light-2026-08-01.md`, `docs/21-second-light-
 2026-08-01.md`, `docs/22-sight-gating-2026-08-02.md` (design →
@@ -60,7 +67,7 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (192; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (241; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame, and
   real-o2r place-sense pins that skip if oot.o2r is absent).
 - Run: `python3 -m ocarina --repo <save-file-repo> --o2r
@@ -132,7 +139,44 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play after the eighth flight (server at 0.8.0; dialogue, saving, and use_item LIVE)
+## State of play after the ninth flight (server at 0.9.0; equip, buy, and dialogue_choose LIVE)
+
+- **0.9.0 + THE NINTH FLIGHT (2026-08-05, dojo docs/28 — built in the
+  morning, acceptance-flown on a FRESH save file the same day; the
+  session record + honesty audit are the last two sections of
+  docs/28, read them before citing this flight).** The slate:
+  `equip(item)` (worn-mask verified, sword half-commit check),
+  `buy(item)` (the seven-phase purchase owning shelf → confirm →
+  fanfare → continue-shopping; wallet delta is the proof), and
+  dialogue_choose's first LIVE choice (the 0x6B continue-shopping
+  box). The flight (repo `../ocarina-flights/09-kokiri/`, journal
+  included): fresh file "C", treehouse → sword (first CRAWL, found
+  via the game's own crawlspace wall flags; get-item cutscene frozen
+  by our own chest-`opened` wake, diagnosed live) → 40 rupees (bushes,
+  Mido's chests, then an AUTONOMOUS money loop: farm → dry →
+  house-cycle → farm) → first live buy (deku_shield; the select-A ate
+  by the description box's typing animation — retry from the settled
+  box ran clean; server fix owed in buy phase 4) → shield equipped →
+  trail (mesh-A* waypoints; Mido never fired a box with sword+shield
+  worn) → STOPPED at the mouth as ordered → extended by AJ: room 0
+  CLEARED (two babas, zero damage, deku_baba_v4 ported byte-identical
+  from second-light). Three game-native saves, no deaths. Runtime
+  findings, all recorded in docs/28 + harness-backlog: the spurious
+  force_state/reload wake (old body's abort dispatches on the NEW
+  node, {detail} unresolved — 4 sightings); resume-after-wake re-runs
+  the current node's body; the place sense reads THROUGH the atrium
+  floor web (an actor surface, not mesh — six false `fell`
+  narrations mid-fight); the unreachable-target blacklist was
+  field-reinvented TWICE (collect_rupees v3, farm_shield_fund v2) —
+  it wants to be a surface primitive; box hygiene is needed at EVERY
+  interaction boundary (a kokiri greeting froze a body's pad for
+  100 s). AJ's mid-flight verdict, now a commissioned backlog
+  proposal: in-region navigation is blind — route-aware walking over
+  the already-loaded mesh, refusals before movement. **The honesty
+  audit matters for public claims: scene/actor-table lookups and
+  mind-side mesh A* were used (legal in an acceptance flight,
+  contraband in scored play), and the baba killer was a prior-run
+  port.**
 
 - **0.8.0 + THE SEVENTH AND EIGHTH FLIGHTS (2026-08-04, dojo docs/27 —
   designed, ratified, built, and acceptance-flown in one day).** The

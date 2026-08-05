@@ -129,6 +129,14 @@ class TestStdioSmoke(unittest.TestCase):
         self.assertEqual(digest["hearts"], 3.0)
         self.assertEqual(digest["nearest_enemy"]["kind"], "deku_baba")
 
+        # 4b. A staged main-thread op over the real pipes: equip polls the
+        #     instrument through its try_again round and then verifies the
+        #     worn mask off the wire (docs/28).
+        equipped = self.call_tool("equip", {"item": "hylian_shield"})
+        self.assertTrue(equipped["ok"], equipped)
+        self.assertEqual(equipped["worn"]["shield"], "hylian_shield")
+        self.assertEqual(self.fake.worn, 0x21)
+
         # 5. Autopilot: the fixture behavior runs against the fake at 20 Hz
         #    and the loop transition keeps it running.
         deadline = time.monotonic() + 10

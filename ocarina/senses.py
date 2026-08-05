@@ -52,6 +52,15 @@ Known honesty gaps, flagged rather than hidden:
   that loudly, once.
 - The menu documents cover items and equipment only; map and quest
   subscreens stay honest not-yets (their substrates aren't on the wire).
+- Drops (En_Item00) are named from their params as of 0.9.0, but only for
+  the params curated in ITEM00_NAMES; anything else narrates as
+  `dropped_item` — a real thing seen, not identified. The raw param is
+  never presented: a number is not something a player saw.
+- The 0.9.0 vocabulary pass (Kokiri route) named twelve actors from the
+  id table AHEAD of eyewitness confirmation, which is the 0.3.0 order of
+  operations (name, then have AJ look) but leaves a window where a name
+  can be wrong in the confident direction. Flagged here until the first
+  Kokiri flight confirms them.
 """
 
 from __future__ import annotations
@@ -60,8 +69,9 @@ import json
 from pathlib import Path
 
 from .place import clock_bearing
-from .protocol import (ACTORCAT_ENEMY, PLAYER_STATE1_CLIMBING_LADDER,
-                       PLAYER_STATE1_DEAD, PLAYER_STATE1_ON_A_WALL)
+from .protocol import (ACTOR_EN_ITEM00, ACTORCAT_ENEMY,
+                       PLAYER_STATE1_CLIMBING_LADDER, PLAYER_STATE1_DEAD,
+                       PLAYER_STATE1_ON_A_WALL)
 
 # -- official names (the open vocabulary; grows one region ahead) ------------
 
@@ -80,31 +90,115 @@ OFFICIAL_NAMES = {
     0x000F: "spider_web",      # Bg_Ydan_Sp — the web over the atrium floor hole
     0x0125: "bush",            # En_Kusa, the cuttable shrubs
     0x000A: "treasure_chest",  # En_Box — the gestalt is instant on sight
+    # 0.9.0, the Kokiri slate (dojo docs/28): the treehouse → Deku Tree
+    # route narrated as unknown_0xNNNN before this pass, and the 40-rupee
+    # hunt is all drops. Ids verified against actor_table.h; the names are
+    # the mind's delegated interface ruling (the 2026-08-01 delegation, as
+    # docs/28 open call 6 records for the shop catalog). EYEWITNESS
+    # CONFIRMATION IS PENDING on the first Kokiri flight — that is the
+    # 0.3.0 convention: name from the id table, then have AJ look.
+    0x0163: "kokiri_child",    # En_Ko — the forest children (the spam source)
+    0x016D: "mido",            # En_Md — the one standing in the gate
+    0x0146: "saria",           # En_Sa
+    0x003D: "shopkeeper",      # En_Ossan — the man behind the counter
+    0x0004: "shop_item",       # En_GirlA — the item ON the shelf, one actor
+                               # per slot (its params are the shop row)
+    0x003E: "deku_tree",       # Bg_Treemouth — the mouth IS the tree, on sight
+    0x0130: "rolling_boulder", # En_Goroiwa — the boulder in the corridor
+    0x0141: "signpost",        # En_Kanban — readable since 0.8.0
+    0x01B9: "gossip_stone",    # En_Gs
+    0x014E: "rock",            # En_Ishi — the liftable ones
+    0x0077: "tree",            # En_Wood02
+    0x0009: "door",            # En_Door — the house doors. Same word as
+                               # Door_Shutter (0x002E, the dungeon half):
+                               # a player sees "a door" in both, and the
+                               # vocabulary is what they saw, not the class.
 }
+
+#: Actors whose params carry the identity a sighted player reads off the
+#: sprite — resolved by `actor_name(actor_id, params)`, never by id alone.
+#: En_Item00's params are the Item00Type (z64actor.h), masked to 0xFF by
+#: its own Init (z_en_item00.c:362). A player sees "a green rupee", not
+#: "an item"; naming the drop is what closes the 0.3.0-era deferral.
+#: Uncurated params fall back to `dropped_item` — honest and visible (the
+#: raw param is never presented; a number is not something anyone saw).
+ITEM00_NAMES = {
+    0x00: "green_rupee",
+    0x01: "blue_rupee",
+    0x02: "red_rupee",
+    0x03: "recovery_heart",
+    0x04: "bomb_drop",
+    0x05: "arrows",
+    0x06: "heart_piece",
+    0x07: "heart_container",
+    0x08: "arrows",
+    0x09: "arrows",
+    0x0A: "arrows",
+    0x0B: "bomb_drop",
+    0x0C: "deku_nut",
+    0x0D: "deku_stick",
+    0x0E: "magic_jar",
+    0x0F: "magic_jar",
+    0x10: "deku_seeds",
+    0x11: "small_key",
+    0x13: "orange_rupee",
+    0x14: "purple_rupee",
+    0x15: "deku_shield",
+    0x16: "hylian_shield",
+    0x17: "zora_tunic",
+    0x18: "goron_tunic",
+    0x19: "bomb_drop",
+    0x1A: "bombchu",
+}
+ITEM00_FALLBACK = "dropped_item"
 
 #: Actors with NO sprite — a sighted player cannot see them, so narrating
 #: their spawns is X-ray vision, worse than an unknown_0x____ (which at
 #: least flags a real visible thing we couldn't name). Ids verified
 #: against actor_table.h; closes the first-light "narrates Link himself
 #: and loader actors" instrument item. Deliberately dropped, not
-#: forgotten (0x0015 En_Item00 drops stay narratable but unnamed for now:
-#: a sighted player sees "a heart", not "an item" — needs param-aware
-#: naming).
+#: forgotten. (0x0015 En_Item00 was listed here as an open item until
+#: 0.9.0 — drops are now named from their params, see ITEM00_NAMES.)
 NEVER_PRESENTED = {
     0x0000,   # Player — Link is the viewer, not a sighting
     0x0023,   # En_Holl — invisible room-transition plane
     0x011B,   # Elf_Msg — invisible Navi-message trigger volume (9 in room 0)
+    # 0.9.0, the Kokiri slate: two more sprite-less actors on the route.
+    0x003B,   # En_River_Sound — an ambient-sound volume (the stream, the
+              # waterfall); it is a SOUND, and sound is its own sense
+    0x0173,   # Elf_Msg2 — the other invisible Navi-message trigger volume
 }
 
 
-def actor_name(actor_id: int) -> str:
+def _resolve_name(actor_id: int, params=None) -> tuple[str, bool]:
+    """(name, curated) for a census actor. `curated` False means the name
+    is a placeholder standing in for a vocabulary gap."""
+    if actor_id == ACTOR_EN_ITEM00:
+        name = (ITEM00_NAMES.get(int(params) & 0xFF)
+                if params is not None else None)
+        return (name, True) if name else (ITEM00_FALLBACK, False)
+    name = OFFICIAL_NAMES.get(actor_id)
+    return (name, True) if name else (f"unknown_0x{actor_id:04X}", False)
+
+
+def actor_name(actor_id: int, params=None) -> str:
     """Official name, or an honest placeholder that flags the coverage gap.
 
     An `unknown_0x____` in the narration is an instrument item ("I couldn't
     see what that was"), never silently dropped — under-sensing is
-    blindness, found by watching.
+    blindness, found by watching. `params` is the census actor's params
+    field, needed for the actors whose identity rides there (drops); the
+    fallback for an uncurated drop is `dropped_item` — vaguer than the
+    truth, never wrong, and never the raw number.
     """
-    return OFFICIAL_NAMES.get(actor_id, f"unknown_0x{actor_id:04X}")
+    return _resolve_name(actor_id, params)[0]
+
+
+def actor_named(actor_id: int, params=None) -> bool:
+    """False when actor_name() is standing in for a vocabulary gap — the
+    debug overlay's amber, and the only honest way to ask now that a name
+    can come from params rather than OFFICIAL_NAMES membership."""
+    return _resolve_name(actor_id, params)[1]
 
 
 #: Item id -> official name (z64item.h ItemID) — the item vocabulary
@@ -140,6 +234,32 @@ EQUIP_PIECES = {
     "shield": ("deku_shield", "hylian_shield", "mirror_shield"),
     "tunic": ("kokiri_tunic", "goron_tunic", "zora_tunic"),
     "boots": ("kokiri_boots", "iron_boots", "hover_boots"),
+}
+
+
+#: The Kokiri shop's shelves: official name -> (shop row / SI param, price,
+#: description text id, buy-prompt text id). Transcribed from the game's own
+#: tables — shopItemEntries (z_en_girla.c:166-271, plus SI_ARROWS_10 at :299)
+#: filtered by sShopkeeperStores[0] (z_en_ossan.c:203-210), which is the
+#: Kokiri store's eight slots.
+#:
+#: This is MECHANICS KNOWLEDGE of the ITEM_IDS class, ratified as such (dojo
+#: docs/28 open call 6): it is the id table a `buy("deku_shield")` verb needs
+#: to steer the shop's own UI, not knowledge of the world a player couldn't
+#: have. A shopper reads the price off the sign; the text ids are the
+#: server's private steering wire. Prices here are the base prices the table
+#: declares — buy() still verifies the ACTUAL rupee delta off the wire and
+#: refuses to claim success on a mismatch (SoH's shield-discount CVar can
+#: move it), so this table can never quietly lie about what a purchase cost.
+SHOP_CATALOG = {
+    "deku_shield":    (0x0D, 40, 0x009F, 0x0089),
+    "deku_nuts_5":    (0x00, 15, 0x00B2, 0x007F),
+    "deku_nuts_10":   (0x04, 30, 0x00A2, 0x0087),
+    "deku_stick":     (0x05, 10, 0x00A1, 0x0088),
+    "deku_seeds_30":  (0x1D, 30, 0x00DF, 0x00DE),
+    "arrows_10":      (0x2C, 20, 0x00A0, 0x008A),
+    "arrows_30":      (0x01, 60, 0x00C1, 0x009B),
+    "recovery_heart": (0x10, 10, 0x00AC, 0x0095),
 }
 
 
@@ -294,7 +414,7 @@ def spawn_events(fresh: list, seen: SeenKinds) -> list:
         actor_id = a.get("id", -1)
         if actor_id in NEVER_PRESENTED:
             continue
-        kind = actor_name(actor_id)
+        kind = actor_name(actor_id, a.get("params"))
         ev = {"event": "spawn", "kind": kind,
               "novel": 1 if seen.sight(kind) else 0}
         # A chest's lid state reads on sight; the wire carries the game's
@@ -408,7 +528,7 @@ def digest(state: dict, sightings: Sightings, place: dict | None = None) -> dict
     near = nearest_enemy_slot(state, sightings)
     if near is not None:
         out["nearest_enemy"] = {
-            "kind": actor_name(near.get("id", -1)),
+            "kind": actor_name(near.get("id", -1), near.get("params")),
             "dist": float(near.get("dist_xz", 0.0)),
             # dist_y is yDistToPlayer = player.y - actor.y (Actor_HeightDiff,
             # z_actor.c:1397): NEGATIVE when the actor is above Link. Negate
@@ -496,7 +616,8 @@ def translate(msg: dict):
     if name == "enemy_defeat":
         # Both baba death paths fire this (workshop docs/06): it proves a
         # kill. The visible presentation is the enemy's death burst.
-        return {"event": "despawn", "kind": actor_name(msg.get("id", -1)),
+        return {"event": "despawn",
+                "kind": actor_name(msg.get("id", -1), msg.get("params")),
                 "cue": "defeated"}
     if name == "health_change":
         amount = msg.get("amount", 0)

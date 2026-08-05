@@ -2,9 +2,12 @@
 
 v0 algorithm, deliberately simple:
   - walkable polys (normal.y >= FLOOR_NY) flood-filled over shared edges
-    (vertices deduped by coordinate so sub-mesh seams don't split regions)
+    (vertices welded WITHIN TOLERANCE — WELD_TOL — so the shipped scenes'
+    unwelded sub-mesh seams don't split a room down the middle)
   - climb edges from ladder/vine wall polys, linked to the floor regions
-    their bottom/top vertices touch
+    their span touches — by vertex proximity AND by the floor surface the
+    column stands on (coarse exterior terrain has no vertex anywhere near
+    the ladder)
   - drop/jump candidate edges from region-boundary proximity (marked
     "candidate" — v0 makes no traversability promise)
 
@@ -32,18 +35,109 @@ DROP_MIN_DY = 40.0        # height loss to call it a drop
 JUMP_MAX_DY = 24.0        # near-level
 JUMP_GAP = (20.0, 130.0)  # XZ gap range for a jump candidate
 
+#: Vertices this close together are the SAME corner, authored twice.
+#: Shipped scenes stitch sub-meshes without welding: Kokiri Forest's main
+#: floor meets itself at corners a whole unit apart ([-701,0,-301] vs
+#: [-701,1,-301]) and an exact-coordinate weld split the forest floor into
+#: two non-adjacent regions — the mind's own front yard, unroutable. The
+#: tolerance sits BELOW the smallest genuine feature separation measured
+#: across the shipped scenes (ydan's closest distinct pair is 2.0 apart,
+#: link_home's 2.24, kokiri_shop's 2.83), so seams heal and no two real
+#: surfaces ever fuse. Raising it is a claim about geometry — measure the
+#: scenes first.
+WELD_TOL = 1.5
 
-def _dedupe_vertices(mesh: CollisionMesh):
-    """Map original vertex indices to canonical per-coordinate ids."""
+
+def _dedupe_vertices(mesh: CollisionMesh, tol: float = WELD_TOL):
+    """Map original vertex indices to canonical ids, welding coordinates
+    that coincide within `tol` (see WELD_TOL — an unwelded seam is an
+    invisible wall down the middle of a room).
+
+    Deterministic by construction: groups are keyed by their LOWEST
+    first-seen vertex id and emitted in that order, so a mesh with no
+    near-duplicates produces exactly the coordinate list the exact weld
+    produced (ydan is byte-identical under this function)."""
+    exact = {}
+    uniq = []
+    for v in mesh.vertices:
+        if v not in exact:
+            exact[v] = len(uniq)
+            uniq.append(v)
+
+    # Union-find over a tol-sized spatial hash: only near pairs compared.
+    parent = list(range(len(uniq)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    cells = defaultdict(list)
+
+    def cell_of(v):
+        return (int(math.floor(v[0] / tol)), int(math.floor(v[1] / tol)),
+                int(math.floor(v[2] / tol)))
+
+    for i, v in enumerate(uniq):
+        cells[cell_of(v)].append(i)
+    for i, v in enumerate(uniq):
+        cx, cy, cz = cell_of(v)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for j in cells.get((cx + dx, cy + dy, cz + dz), ()):
+                        if j >= i:
+                            continue
+                        if math.dist(uniq[i], uniq[j]) > tol:
+                            continue
+                        ri, rj = find(i), find(j)
+                        if ri != rj:
+                            # lowest id wins: find() returns the group's
+                            # first-seen member, so ordering is stable
+                            parent[max(ri, rj)] = min(ri, rj)
+
     canon = {}
     coords = []
-    remap = []
-    for v in mesh.vertices:
-        if v not in canon:
-            canon[v] = len(coords)
-            coords.append(v)
-        remap.append(canon[v])
+    for i in range(len(uniq)):
+        root = find(i)
+        if root not in canon:
+            canon[root] = len(coords)
+            coords.append(uniq[root])
+    remap = [canon[find(exact[v])] for v in mesh.vertices]
     return coords, remap
+
+
+def _contains_xz(pt, a, b, c) -> bool:
+    """Is (x, z) inside the triangle's XZ projection? (Barycentric, with
+    the same edge slack the field localizer uses.)"""
+    px, pz = pt
+    v0 = (c[0] - a[0], c[2] - a[2])
+    v1 = (b[0] - a[0], b[2] - a[2])
+    v2 = (px - a[0], pz - a[2])
+    d00 = v0[0] * v0[0] + v0[1] * v0[1]
+    d01 = v0[0] * v1[0] + v0[1] * v1[1]
+    d11 = v1[0] * v1[0] + v1[1] * v1[1]
+    d20 = v2[0] * v0[0] + v2[1] * v0[1]
+    d21 = v2[0] * v1[0] + v2[1] * v1[1]
+    den = d00 * d11 - d01 * d01
+    if abs(den) < 1e-9:
+        return False
+    u = (d11 * d20 - d01 * d21) / den
+    v = (d00 * d21 - d01 * d20) / den
+    return u >= -0.02 and v >= -0.02 and (u + v) <= 1.02
+
+
+def _plane_y_at(pt, a, b, c) -> float:
+    """The triangle's surface height over (x, z)."""
+    u = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+    w = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+    nx = u[1] * w[2] - u[2] * w[1]
+    ny = u[2] * w[0] - u[0] * w[2]
+    nz = u[0] * w[1] - u[1] * w[0]
+    if abs(ny) < 1e-9:
+        return (a[1] + b[1] + c[1]) / 3
+    return a[1] - (nx * (pt[0] - a[0]) + nz * (pt[1] - a[2])) / ny
 
 
 def _tri_area_and_centroid(a, b, c):
@@ -75,6 +169,10 @@ def distill(mesh: CollisionMesh) -> dict:
     for p in floors:
         a, b, c = tri(p)
         for e in (frozenset((a, b)), frozenset((b, c)), frozenset((c, a))):
+            if len(e) < 2:
+                continue    # a sliver whose ends welded: not an edge, and
+                            # never a place two polys "share" (that would
+                            # fuse regions through a single point)
             edge_owners[e].append(p.index)
 
     adjacency = defaultdict(set)
@@ -228,6 +326,29 @@ def distill(mesh: CollisionMesh) -> dict:
                 break
         return hits
 
+    def regions_beneath(points_xz, y_min, y_max):
+        """Regions whose FLOOR SURFACE lies directly under (or over) one of
+        the given XZ points, at a height inside [y_min, y_max]
+        -> {rid: lowest such floor y}.
+
+        Vertex proximity alone smuggles in a mesh-density assumption: it
+        holds indoors, where floors are chopped into small tiles, and
+        fails outdoors, where one terrain triangle can be hundreds of
+        units across. Kokiri Forest's treehouse ladder STANDS ON a floor
+        poly whose nearest vertex is 289 units away — Link's own front
+        door was map-unreachable until this test. Standing on a surface
+        is the honest predicate; being near its corners was a proxy."""
+        near = {}
+        for pi, rid in poly_region.items():
+            a, b, c = (coords[k] for k in tri(poly_by_index[pi]))
+            for pt in points_xz:
+                if not _contains_xz(pt, a, b, c):
+                    continue
+                fy = _plane_y_at(pt, a, b, c)
+                if y_min <= fy <= y_max and (rid not in near or fy < near[rid]):
+                    near[rid] = fy
+        return near
+
     climb_edges = []
     for root, members in clusters.items():
         kind = kind_of[root]
@@ -254,6 +375,14 @@ def distill(mesh: CollisionMesh) -> dict:
                         best_y = v[1] if best_y is None else min(best_y, v[1])
                 if best_y is not None:
                     near[rid] = best_y
+            # ...and every region whose floor the column actually touches
+            # (the XZ footprint is the same all the way up, so one deduped
+            # set of XZ points covers the whole span)
+            foot_xz = sorted({(pt[0], pt[2]) for pt in pts})
+            for rid, fy in regions_beneath(foot_xz, y_lo - LINK_Y,
+                                           y_hi + LINK_Y).items():
+                if rid not in near or fy < near[rid]:
+                    near[rid] = fy
             mid = (y_lo + y_hi) / 2
             lo_regions = {r for r, y in near.items() if y < mid}
             hi_regions = {r for r, y in near.items() if y >= mid}

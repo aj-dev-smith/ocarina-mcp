@@ -47,6 +47,12 @@ ACTOR_EN_FIREFLY = 0x0013    # Keese (all variants)
 # on walls and shares the room. fixtures/dev-run/docs/14-skulltula.md
 ACTOR_EN_ST = 0x0037         # Skulltula
 ACTOR_EN_SW = 0x0095         # Skullwalltula (wall crawler — different enemy)
+# Two actors whose PARAMS carry the identity a player reads off the sprite,
+# so naming them needs the census's params field, not the id alone (0.9.0):
+# En_Item00's params are the Item00Type (masked to 0xFF in its own Init,
+# z_en_item00.c:362), and a shop item's params are its shop row (SI_*).
+ACTOR_EN_GIRLA = 0x0004      # the item standing on a shop shelf
+ACTOR_EN_ITEM00 = 0x0015     # the collectible drops (rupees, hearts, ...)
 
 # Actor categories (soh/include/z64actor.h)
 ACTORCAT_SWITCH = 0

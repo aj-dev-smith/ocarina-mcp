@@ -54,6 +54,8 @@ Reproduce:
 - Routes are poly-centroid polylines (no funnel smoothing) — they zigzag.
 - One 3F vine column and the crawl ends remain honestly unlinked (`!!` in
   distill output, amber in the viewer) — the boundary is shown, not hidden.
+  (The crawl ends are an END-CLUSTERING gap, not a linking one: the four
+  crawl panels share no vertices, so the lo/hi split empties.)
 - Region ids are unstable across distiller changes; a real place sense
   needs deterministic naming before mind-side knowledge can accrue on them.
 
@@ -85,6 +87,39 @@ Field results for the design doc:
   refuses off-mesh targets by construction), not a discipline.
 - Screenshot-as-escalation earned its backlog rank: AJ's two screenshots
   resolved in seconds what probes argued about for minutes.
+
+## Kokiri Forest: two motor-grade fixes (2026-08-05, dojo docs/28 §4)
+
+The first OVERWORLD scene distilled (spot04, 1,692 polys) exposed two
+assumptions that only held indoors. Both fixed here and mirrored verbatim
+into the port (`ocarina/navgraph.py` — the lab/port diff is still just the
+header, the import line, the CLI harness and `base_segments`); ydan
+re-distills BYTE-IDENTICAL under both, `ydan_navgraph.json` included, so
+no pinned name moved.
+
+- **Tolerance welding (`WELD_TOL = 1.5`).** The shipped scenes stitch
+  sub-meshes without welding: Kokiri's forest floor meets itself at
+  corners 1.0 unit apart (`[-701,0,-301]` vs `[-701,1,-301]`), and an
+  exact-coordinate weld flood-filled the main floor into two non-adjacent
+  regions — an invisible wall across the mind's own front yard. The
+  tolerance sits below the smallest genuine feature separation measured
+  across ydan (2.0), link_home (2.24) and kokiri_shop (2.83), so seams
+  heal and no two real surfaces fuse. spot04: 101 -> 98 regions (three
+  seam merges, 124+22+3 polys into one 149-poly forest floor).
+- **Point-in-poly climb linking.** Linking a column by nearby region
+  VERTICES assumed indoor mesh density. Outdoors one terrain triangle
+  spans hundreds of units: the treehouse ladder's nearest region vertex
+  is 289 units away even though it stands ON a floor poly, so it linked
+  its top to the balcony and its bottom to nothing — Link's front door,
+  map-unreachable. Columns now also link to every region whose floor
+  SURFACE lies under (or over) their XZ footprint within the span.
+  spot04: 1/6 -> 2/6 columns linked; `traverse("ladder@-30,-80,1000")`
+  now resolves from anywhere on the forest floor.
+
+Regression: `tests/test_place.py` (`TestSeamWelding`,
+`TestClimbLinkingOnCoarseTerrain` — synthetic, always run;
+`TestRealSpot04Graph` — real-o2r pins, skipped without the o2r), beside
+this file's `test_ring.py`, which must stay green unchanged.
 
 ## Status
 

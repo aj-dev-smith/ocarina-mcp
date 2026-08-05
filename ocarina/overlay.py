@@ -41,8 +41,8 @@ Label truthfulness notes:
 from __future__ import annotations
 
 from .protocol import ACTORCAT_ENEMY
-from .senses import (NEVER_PRESENTED, OFFICIAL_NAMES, SeenKinds, Sightings,
-                     actor_name, census_truncated, nearest_enemy_slot)
+from .senses import (NEVER_PRESENTED, SeenKinds, Sightings, actor_name,
+                     actor_named, census_truncated, nearest_enemy_slot)
 
 #: The game side (DojoOverlay.cpp) REJECTS a push carrying more than 32
 #: labels outright, so this is a hard wire limit, not a taste call. With
@@ -135,7 +135,8 @@ def labels(state: dict, seen: SeenKinds, sightings: Sightings) -> list[dict]:
             # Sprite-less actors are invisible to AJ too — no label is the
             # correct render of "not in the sensorium".
             continue
-        kind = actor_name(actor_id)
+        named = actor_named(actor_id, a.get("params"))
+        kind = actor_name(actor_id, a.get("params"))
         # The digest's arithmetic, sign convention included (senses.digest):
         # above > 0 means over Link's head.
         dist = float(a.get("dist_xz", 0.0))
@@ -154,11 +155,11 @@ def labels(state: dict, seen: SeenKinds, sightings: Sightings) -> list[dict]:
             color = COLOR_NEAREST
         elif unsighted:
             color = COLOR_UNSIGHTED
-        elif actor_id not in OFFICIAL_NAMES:
+        elif not named:
             color = COLOR_UNKNOWN
         else:
             color = COLOR_NAMED
-        scored.append((_rank(a, nearest_key, actor_id in OFFICIAL_NAMES),
+        scored.append((_rank(a, nearest_key, named),
                        {"key": key, "text": "\n".join(lines), "color": color}))
     scored.sort(key=lambda pair: pair[0])
     return [label for _, label in scored[:LABEL_BUDGET]]

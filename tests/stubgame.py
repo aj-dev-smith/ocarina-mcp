@@ -32,6 +32,12 @@ class StubLink:
         self.requests: list = []
         self.saves = 0                  # completed `save` ops (docs/27)
         self.save_script: list = []     # queued save-op replies for tests
+        self.equips_sent: list = []     # equip_gear payloads seen (docs/28)
+        self.equip_script: list = []    # queued equip_gear replies for tests
+        #: Called with (payload, self) on every pad op — how a test scripts
+        #: a shop: the game answers a stick nudge or an A press by moving
+        #: the message box on, exactly as En_Ossan's state machine does.
+        self.pad_hook = None
         # Mutable world the tests poke at; merged into every state reply.
         self.world = {
             "save_loaded": True, "scene": 85, "health": 48,
@@ -85,6 +91,8 @@ class StubLink:
                     msg["choice_index"] = min(top, msg["choice_index"] + 1)
                 elif stick[1] >= 30:
                     msg["choice_index"] = max(0, msg["choice_index"] - 1)
+            if self.pad_hook is not None:
+                self.pad_hook(payload, self)
         elif op == "save":
             # Scriptable: tests queue {"status": ...} dicts; default saves.
             scripted = self.save_script.pop(0) if self.save_script else {"saved": True}
@@ -96,5 +104,20 @@ class StubLink:
             key = ("c_left", "c_down", "c_right")[button]
             self.world.setdefault("equips", {})[key] = item
             res["item"], res["button"] = item, button
+        elif op == "equip_gear":
+            # The staged gear commit (docs/28). Scriptable like `save`;
+            # the default models the game's own write: the worn mask's
+            # nibble for the row, plus the B button on the sword row.
+            self.equips_sent.append(dict(payload))
+            scripted = (self.equip_script.pop(0) if self.equip_script
+                        else {"equipped": True})
+            res.update(scripted)
+            if scripted.get("status", "success") == "success":
+                equips = self.world.setdefault("equips", {})
+                t, v = payload["equip_type"], payload["value"]
+                worn = int(equips.get("worn", 0))
+                equips["worn"] = (worn & ~(0xF << (t * 4))) | (v << (t * 4))
+                if t == 0:
+                    equips["b"] = (0x3B, 0x3C, 0x3D)[v - 1]
         # events / tick / hud: accepted, no-op
         return res

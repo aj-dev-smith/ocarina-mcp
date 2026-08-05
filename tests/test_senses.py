@@ -138,8 +138,11 @@ class TestSpawnNarration(SightedCase):
                                                      key=actor_id)), [])
 
     def test_unknown_still_flags_the_gap(self):
-        events = self.spawns(enemy_actor(0x01B9, key=0x01B9))
-        self.assertEqual(events[0]["kind"], "unknown_0x01B9")
+        # 0x01B9 held this role until 0.9.0 named it (gossip_stone); the
+        # vocabulary grows one region ahead, so this test needs an id the
+        # frontier has genuinely not reached.
+        events = self.spawns(enemy_actor(0x0FFF, key=0x0FFF))
+        self.assertEqual(events[0]["kind"], "unknown_0x0FFF")
 
     def test_onactorinit_no_longer_narrates(self):
         self.assertIsNone(senses.translate(

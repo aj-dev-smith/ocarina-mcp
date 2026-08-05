@@ -66,6 +66,14 @@ class FakeGame:
         self.nuts = 5
         self.saves = 0
         self.save_pending = False
+        # docs/28 instrument state: the equipment masks and the staged
+        # equip_gear round trip. worn 0x11 / owned 0x33 = a Kokiri sword
+        # and a Deku shield worn, with the second sword/shield row owned
+        # too (so a test can equip something not already on).
+        self.equip_b = 0x3B
+        self.worn = 0x11
+        self.owned = 0x33
+        self.equip_pending = False
 
     def reset_world(self) -> None:
         self.player = {"x": 0.0, "z": 0.0, "health": 48}  # 3 hearts
@@ -192,10 +200,10 @@ class FakeGame:
                 # nuts in slots 0/1, everything else empty; equips mirror
                 # what assign_c wrote.
                 "pause": {"state": 0, "page": 0},
-                "equips": {"b": 0xFF, "c_left": self.equips_c[0],
+                "equips": {"b": self.equip_b, "c_left": self.equips_c[0],
                            "c_down": self.equips_c[1],
                            "c_right": self.equips_c[2],
-                           "worn": 0x11, "owned": 0x11},
+                           "worn": self.worn, "owned": self.owned},
                 "inventory": {"items": [0x00, 0x01] + [0xFF] * 22,
                               "ammo": [3, self.nuts] + [0] * 14},
             }
@@ -312,6 +320,32 @@ class FakeGame:
                 self.equips_c[button] = payload.get("item")
                 res["item"] = payload.get("item")
                 res["button"] = button
+        elif op == "equip_gear":
+            # The staged gear commit (docs/28), modelled to the same shape
+            # as the real op: one try_again round, then the subscreen's own
+            # gates, then the masked write. Refusals are NAMED — the
+            # ocarina side passes them through untouched, so the exact
+            # wording is the game side's to own.
+            t, v = payload.get("equip_type", -1), payload.get("value", -1)
+            if not (0 <= t <= 3 and 1 <= v <= 3):
+                res["status"] = "failure"
+                res["error"] = ("equip_type must be 0-3 (sword, shield, "
+                                "tunic, boots) and value 1-3")
+            elif t == 0 and v == 3:
+                res["status"] = "failure"
+                res["error"] = "the biggoron sword is not equippable here"
+            elif not (self.owned & (1 << (t * 4 + v - 1))):
+                res["status"] = "failure"
+                res["error"] = "that equipment is not owned"
+            elif not self.equip_pending:
+                self.equip_pending = True
+                res["status"] = "try_again"
+            else:
+                self.equip_pending = False
+                self.worn = (self.worn & ~(0xF << (t * 4))) | (v << (t * 4))
+                if t == 0:
+                    self.equip_b = (0x3B, 0x3C, 0x3D)[v - 1]
+                res["equipped"] = True
         else:
             res["status"] = "failure"
             res["error"] = f"unknown op {op}"

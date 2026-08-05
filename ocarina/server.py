@@ -24,6 +24,7 @@ import argparse
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -33,10 +34,43 @@ from .events import EventLog
 from .game import Game
 from .link import GameLink, LinkError
 from .place import PlaceSense
-from .protocol import DEFAULT_PORT
+from .protocol import ACTOR_EN_GIRLA, DEFAULT_PORT
 from .runtime import MachineRuntime
 
 PROTOCOL_VERSION = "2025-06-18"
+
+#: One stick nudge, the shape dialogue_choose established live: hold, then
+#: neutral, so the game's held-stick latch (and En_Ossan's stickAccumX)
+#: re-arms before the next one. LIVE-TUNED CONSTANTS — the shop's browse
+#: states want |stickAccumX| > 500, which no test can price.
+_NUDGE_HOLD_S = 0.15
+_NUDGE_GAP_S = 0.1
+
+#: The shop, in text ids (z_en_ossan.c). Mechanics knowledge, like the
+#: catalog: these are how the server READS the shop's state machine off
+#: the wire instead of assuming it — every phase of buy() verifies which
+#: box is actually on screen before pressing anything.
+SHOP_FACING_BOX = 0x83          # facing the shopkeeper, shelves either side
+SHOP_QUICK_BUY_BOXES = (0x84, 0x9A)   # bought over the counter, no fanfare
+SHOP_NEED_RUPEES_BOX = 0x85     # CANBUY_RESULT_NEED_RUPEES
+SHOP_CANT_GET_BOX = 0x86        # CANBUY_RESULT_CANT_GET_NOW
+SHOP_CONTINUE_BOX = 0x6B        # "Do you want to buy anything else?"
+
+_BUY_MAX_NUDGES = 20            # eight slots, two shelves, slack for a turn
+_BUY_BOX_TIMEOUT_S = 2.0
+_BUY_POLL_S = 0.1
+_BUY_OUTCOME_TIMEOUT_S = 15.0   # the fanfare is long; a stuck modal is worse
+
+
+def _quote_box(msg) -> str:
+    """The open box, verbatim, for a refusal to name what it is looking
+    at (traverse's discipline: quote the blocker, don't categorize it)."""
+    msg = msg or {}
+    if not msg:
+        return "no text box is open"
+    text = msg.get("text")
+    where = f"box 0x{msg.get('text_id', 0):02X}"
+    return f'{where} says: "{text}"' if text else f"{where} carries no text"
 
 INSTRUCTIONS = """\
 ocarina is the instrument you play Ocarina of Time through. You act by
@@ -82,7 +116,15 @@ TOOLS = [
     _tool("save_game", "Game-native save (benchmark-legal: it's a menu function)."),
     _tool("equip", "Pause subscreens: equip an item.", {"item": {"type": "string"}}, ["item"]),
     _tool("use_item", "Use an item.", {"item": {"type": "string"}}, ["item"]),
-    _tool("buy", "Shops: buy an item.", {"item": {"type": "string"}}, ["item"]),
+    _tool("buy", "Shops: buy an item. Owns the whole purchase — shelf, "
+                 "confirm, the get-item box, and the shopkeeper's "
+                 "continue-shopping question.",
+          {"item": {"type": "string"},
+           "keep_shopping": {"type": "boolean",
+                             "description": "Answer the continue-shopping "
+                                            "prompt with 'yes' and stay at "
+                                            "the counter (default: leave)."}},
+          ["item"]),
     _tool("play_song", "The ocarina interface: choosing the song is the game; note entry is UI mechanics.",
           {"name": {"type": "string"}}, ["name"]),
     _tool("screenshot", "Vision on demand; a debugging sense, never a stream."),
@@ -90,12 +132,12 @@ TOOLS = [
 
 #: Tools that exist on the blessed surface but wait on instrument work.
 #: Each maps to what it needs — an honest error beats a silent stub.
+#: (0.8.0 graduated dialogue_choose/save_game/use_item; 0.9.0 graduated
+#: equip and buy. What is left here waits on real UI substrate.)
 NOT_YET = {
     "create_file": "file-select UI navigation not built yet",
     "continue_game": "death-screen UI navigation not built yet",
     "save_and_quit": "save-screen UI navigation not built yet",
-    "equip": "B-button/gear assignment not built yet (use_item covers C buttons; docs/27 kept equip out of scope)",
-    "buy": "shop UI navigation not built yet",
     "play_song": "ocarina UI note entry not built yet",
     "screenshot": "no screenshot op on the wire yet (DojoLink patch needed)",
 }
@@ -315,18 +357,7 @@ class ServerCore:
             return {"ok": False,
                     "error": f"option {target} out of range "
                              f"(choices: {choices})"}
-        cur = msg.get("choice_index", 0)
-        for _ in range(8):
-            if cur == target:
-                break
-            # Stick up moves the cursor up (index down), per the game's own
-            # Message_HandleChoiceSelection; neutral between nudges so its
-            # held-stick latch re-arms.
-            self.game.pad(stick=(0, -127 if target > cur else 127))
-            self.game.wait(0.15)
-            self.game.pad_clear()
-            self.game.wait(0.1)
-            cur = (self.game.state().get("message") or {}).get("choice_index", cur)
+        cur = self._cursor_to(target, start=msg.get("choice_index", 0))
         if cur != target:
             return {"ok": False,
                     "error": f"cursor would not reach option {target} "
@@ -335,6 +366,278 @@ class ServerCore:
         label = choices[target] if target < len(choices) else None
         return {"ok": True, "chose": target, "label": label,
                 "dialogue_open": self.game.state().get("msg_mode", 0) != 0}
+
+    def _cursor_to(self, target: int, start: int | None = None,
+                   tries: int = 8) -> int:
+        """Nudge the open box's choice cursor onto `target`; returns where
+        the WIRE says it ended up (== target on success). Shared by
+        dialogue_choose and buy's two choice boxes — one mechanic, so a
+        fix to the nudge timing can never fix only half the surface."""
+        cur = (self._message() or {}).get("choice_index", 0) \
+            if start is None else start
+        for _ in range(tries):
+            if cur == target:
+                break
+            # Stick up moves the cursor up (index down), per the game's own
+            # Message_HandleChoiceSelection; neutral between nudges so its
+            # held-stick latch re-arms.
+            self.game.pad(stick=(0, -127 if target > cur else 127))
+            self.game.wait(_NUDGE_HOLD_S)
+            self.game.pad_clear()
+            self.game.wait(_NUDGE_GAP_S)
+            cur = (self._message() or {}).get("choice_index", cur)
+        return cur
+
+    def _message(self) -> dict | None:
+        """The wire's current `message` block, or None (no box open, or an
+        instrument that predates the dialogue sense)."""
+        return self.game.state().get("message")
+
+    def _tool_equip(self, args) -> dict:
+        # The equipment subscreen's own commit, its own gates (docs/28):
+        # the mind names a piece, the server finds its row. Refusals land
+        # BEFORE the op wherever the wire can already answer (traverse's
+        # discipline); the game side still backstops every one of them.
+        # The worn mask this writes is the exact predicate Mido reads.
+        if not self.game.link.connected:
+            return {"ok": False, "error": "game not connected"}
+        name = str(args.get("item", ""))
+        found = next(((t, row, pieces.index(name) + 1)
+                      for t, row in enumerate(senses.EQUIP_TYPES)
+                      for pieces in [senses.EQUIP_PIECES[row]]
+                      if name in pieces), None)
+        if found is None:
+            rows = "; ".join(f"{row}: {', '.join(senses.EQUIP_PIECES[row])}"
+                             for row in senses.EQUIP_TYPES)
+            return {"ok": False,
+                    "error": f"unknown gear {name!r} — the equipment "
+                             f"subscreen's four rows are {rows}"}
+        equip_type, row, value = found
+        st = self.game.state()
+        equips = st.get("equips")
+        if equips is None or "worn" not in equips:
+            return {"ok": False,
+                    "error": "instrument predates the equipment sense — "
+                             "rebuild SoH with the 2026-08-04 dojo patch"}
+        owned = senses.equipment_view(equips)["owned"][row]
+        if name not in owned:
+            return {"ok": False,
+                    "error": f"{name} is not owned — the {row} row holds "
+                             f"{', '.join(owned) if owned else 'nothing'}"}
+        result = self.game.equip_gear(equip_type, value)
+        if not result.get("ok"):
+            return result       # the game's own refusal, by name
+        # Verify off the wire: the mask, not the op's word for it.
+        after = self.game.state().get("equips") or {}
+        worn = senses.equipment_view(after)["worn"]
+        if worn.get(row) != name:
+            return {"ok": False,
+                    "error": f"equip did not take: worn shows "
+                             f"{worn.get(row)!r} in the {row} row, "
+                             f"not {name!r}"}
+        if row == "sword" and after.get("b") == senses.ITEM_NONE:
+            return {"ok": False,
+                    "error": f"equip did not take: worn shows {name} but the "
+                             f"B button is still empty (the sword row writes "
+                             f"B — a sword worn with nothing on B is the "
+                             f"half-commit, not a success)"}
+        return {"ok": True, "equipped": name, "slot": row, "worn": worn}
+
+    def _tool_buy(self, args) -> dict:
+        """Buy one named item from the shop Link is standing at.
+
+        The shop is a message-box state machine (En_Ossan), so this is
+        dialogue_choose's mechanic generalized: nudge, then read the LIVE
+        box off the wire and verify — every shelf-cursor move re-issues
+        that slot's description box (z_en_ossan.c:1287,1360), which is
+        what makes cursor position observable at all.
+
+        The tool owns the WHOLE purchase. The rupees only leave the wallet
+        on the A through the "you got it" box (buyEventFunc via
+        TEXT_STATE_DONE, z_en_ossan.c:1739-1760), so returning at the
+        fanfare would leave a half-commit behind a stuck modal. It ends
+        with the shopkeeper's continue-shopping question answered.
+
+        The catalog (senses.SHOP_CATALOG) is mechanics knowledge of the
+        ITEM_IDS class — id tables for steering the game's own UI, ratified
+        as such (docs/28 call 6). Its prices are the game's declared base
+        prices; the ACTUAL cost is verified off the wire before this ever
+        claims success, and a mismatch is returned by name rather than
+        papered over.
+        """
+        if not self.game.link.connected:
+            return {"ok": False, "error": "game not connected"}
+        name = str(args.get("item", ""))
+        row = senses.SHOP_CATALOG.get(name)
+        if row is None:
+            known = ", ".join(sorted(senses.SHOP_CATALOG))
+            return {"ok": False,
+                    "error": f"unknown shop item {name!r} (known: {known} — "
+                             f"the catalog covers the Kokiri shop's shelves)"}
+        si_param, price, desc_id, prompt_id = row
+        keep_shopping = bool(args.get("keep_shopping", False))
+
+        # -- 1. everything refusable before a single button is pressed ----
+        st = self.game.state()
+        on_shelf = any(a.get("id") == ACTOR_EN_GIRLA
+                       and (a.get("params") or 0) & 0xFF == si_param
+                       for a in st.get("actors") or [])
+        if not on_shelf:
+            return {"ok": False,
+                    "error": f"{name} is not sold in this shop (no shelf item "
+                             f"with that row is in the census — not stocked "
+                             f"here, or sold out: a sold-out slot's actor "
+                             f"carries SI_SOLD_OUT, not its own row)"}
+        rupees_before = int(st.get("rupees", 0))
+        if rupees_before < price:
+            return {"ok": False,
+                    "error": f"insufficient rupees (have {rupees_before}, "
+                             f"need {price})"}
+        if st.get("msg_mode", 0) != 0 and st.get("message") is None:
+            return {"ok": False,
+                    "error": "instrument predates the dialogue sense — "
+                             "rebuild SoH with the 2026-08-04 dojo patch"}
+
+        # -- 2. must already be talking to the shopkeeper -----------------
+        # buy is a UI verb: walking up to the counter and pressing A is the
+        # mind's (a behavior's) job, the same line use_item draws.
+        if st.get("msg_mode", 0) == 0:
+            return {"ok": False,
+                    "error": "not talking to a shopkeeper — face the counter "
+                             "and talk first"}
+        msg = st.get("message") or {}
+        shelf_ids = {entry[2] for entry in senses.SHOP_CATALOG.values()}
+        if msg.get("text_id") not in shelf_ids | {SHOP_FACING_BOX}:
+            # The hello box (or the shopkeeper's own greeting): advance it
+            # once and wait for the shop's facing box.
+            self.game.press("A", frames=3)
+            msg = self._await_box({SHOP_FACING_BOX}, _BUY_BOX_TIMEOUT_S)
+            if msg is None:
+                return {"ok": False,
+                        "error": "the shop's item board never came up — "
+                                 + _quote_box(self._message())}
+
+        # -- 3. walk the shelves until the item's own box is on screen ----
+        direction, on_shelves, turned = 1, False, False
+        for _ in range(_BUY_MAX_NUDGES):
+            msg = self._message() or {}
+            text_id = msg.get("text_id")
+            if text_id == desc_id:
+                break
+            if text_id != SHOP_FACING_BOX:
+                on_shelves = True
+            elif on_shelves and not turned:
+                # Walked off the end of a shelf and back to the shopkeeper:
+                # the other shelf is the only place left to look.
+                direction, turned = -direction, True
+            self.game.pad(stick=(127 * direction, 0))
+            self.game.wait(_NUDGE_HOLD_S)
+            self.game.pad_clear()
+            self.game.wait(_NUDGE_GAP_S)
+        else:
+            return {"ok": False,
+                    "error": f"never reached {name} on the shelves after "
+                             f"{_BUY_MAX_NUDGES} cursor moves (sold out, or "
+                             f"this slot is not stocked) — "
+                             + _quote_box(self._message())}
+
+        # -- 4. select the slot: the buy prompt must actually come up -----
+        self.game.press("A", frames=3)
+        msg = self._await_box({prompt_id}, _BUY_BOX_TIMEOUT_S, state="choice")
+        if msg is None:
+            return {"ok": False,
+                    "error": "slot refused selection (sold out?) — "
+                             + _quote_box(self._message())}
+
+        # -- 5. confirm: "Buy" is option 0, and the cursor is verified ----
+        if self._cursor_to(0, start=msg.get("choice_index", 0)) != 0:
+            return {"ok": False,
+                    "error": "the buy prompt's cursor would not move to "
+                             "'Buy' — " + _quote_box(self._message())}
+        self.game.press("A", frames=3)
+
+        # -- 6. ride the outcome out, whichever of the five it is ---------
+        outcome = self._buy_outcome(name, keep_shopping)
+        if not outcome.get("ok"):
+            return outcome
+
+        # -- 7. the wallet is the proof --------------------------------
+        rupees_after = int(self.game.state().get("rupees", 0))
+        spent = rupees_before - rupees_after
+        out = {"item": name, "price": price, "rupees_before": rupees_before,
+               "rupees_after": rupees_after, "spent": spent,
+               "path": outcome["path"], "kept_shopping": keep_shopping}
+        if spent != price:
+            out["ok"] = False
+            out["error"] = (f"bought {name} but the wallet does not agree: "
+                            f"{spent} rupees left it, the catalog says "
+                            f"{price} (a discount, a price this table has "
+                            f"wrong, or a purchase that never committed)")
+            return out
+        out["ok"] = True
+        return out
+
+    def _await_box(self, text_ids: set, timeout: float,
+                   state: str | None = None) -> dict | None:
+        """Poll for a box with one of `text_ids` (and optionally that box
+        state). Returns the message block, or None on timeout."""
+        deadline = time.monotonic() + timeout
+        while True:
+            msg = self._message() or {}
+            if msg.get("text_id") in text_ids and (state is None
+                                                   or msg.get("state") == state):
+                return msg
+            if time.monotonic() >= deadline:
+                return None
+            self.game.wait(_BUY_POLL_S)
+
+    def _buy_outcome(self, name: str, keep_shopping: bool) -> dict:
+        """Watch the shop's answer to the confirmed purchase through to a
+        settled state. Five endings (z_en_ossan.c:1419-1456): the two
+        refusal boxes, the quick-buy box, and the fanfare, which is the
+        only one that also has to be walked through the get-item box and
+        the continue-shopping question."""
+        deadline = time.monotonic() + _BUY_OUTCOME_TIMEOUT_S
+        path = "fanfare"
+        while time.monotonic() < deadline:
+            msg = self._message() or {}
+            text_id, box_state = msg.get("text_id"), msg.get("state")
+            if text_id == SHOP_NEED_RUPEES_BOX:
+                return {"ok": False,
+                        "error": "the shopkeeper says you cannot afford it — "
+                                 + _quote_box(msg)}
+            if text_id == SHOP_CANT_GET_BOX:
+                return {"ok": False,
+                        "error": "cannot take this now (already owned? no "
+                                 "room?) — " + _quote_box(msg)}
+            if text_id in SHOP_QUICK_BUY_BOXES:
+                # The over-the-counter purchase: the item is already given
+                # and paid for; one A closes the box back to the shelf.
+                self.game.press("A", frames=3)
+                self.game.wait(_BUY_POLL_S)
+                return {"ok": True, "path": "quick_buy"}
+            if text_id == SHOP_CONTINUE_BOX and box_state == "choice":
+                target = 0 if keep_shopping else 1
+                if self._cursor_to(target,
+                                   start=msg.get("choice_index", 0)) != target:
+                    return {"ok": False,
+                            "error": f"bought {name}, but the "
+                                     f"continue-shopping cursor would not "
+                                     f"reach option {target} — the box is "
+                                     f"still open: " + _quote_box(msg)}
+                self.game.press("A", frames=3)
+                return {"ok": True, "path": path}
+            if box_state == "done":
+                # The "You got a ...!" box. THIS A is what commits the
+                # rupee deduction (buyEventFunc), so it is not optional and
+                # it is not the mind's to make — the tool owns the whole
+                # sequence or leaves a half-commit behind a modal.
+                self.game.press("A", frames=3)
+            self.game.wait(_BUY_POLL_S)
+        return {"ok": False,
+                "error": f"the shop never settled after confirming {name} "
+                         f"({_BUY_OUTCOME_TIMEOUT_S:.0f}s) — "
+                         + _quote_box(self._message())}
 
     def _tool_save_game(self, args) -> dict:
         # Play_PerformSave behind the pause-legality gate, game-side; the

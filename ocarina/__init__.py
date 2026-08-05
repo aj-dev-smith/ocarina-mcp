@@ -128,7 +128,32 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: on the wire graduates `oot://menu/items` and `oot://menu/equipment`
 #: as documents. An instrument predating the 2026-08-04 dojo patch is
 #: diagnosed loudly and read as blind, never silently.
-OCARINA_VERSION = "0.8.0"
+#: 0.9.0: THE KOKIRI SLATE (dojo docs/28, ratified by AJ 2026-08-05) —
+#: the two tools standing between the bench and its first overworld
+#: route, plus the vocabulary that route needs. No contract touch: both
+#: verbs were already registered and blessed, and implementing a
+#: registered tool is not a surface change (the 0.8.0 precedent).
+#: `equip(item)` graduates on the new `equip_gear` staged op — a
+#: mechanical twin of assign_c running the equipment subscreen's own
+#: gates and commit — refusing off the wire before it sends (unknown
+#: name, not owned) and verifying the worn mask afterwards, which is the
+#: exact predicate Mido's gate evaluates. `buy(item)` graduates with NO
+#: wire change at all: the shop is a message-box state machine, so it is
+#: dialogue_choose's nudge-and-verify generalized to the shelf cursor
+#: (every cursor move re-issues that slot's description box, which is
+#: what makes the cursor observable). buy owns the WHOLE purchase —
+#: shelf, confirm, the get-item box whose A is what actually deducts the
+#: rupees, and the continue-shopping question — because returning early
+#: would leave a half-commit behind a stuck modal; it verifies the rupee
+#: delta off the wire and refuses to claim success on a mismatch. The
+#: vocabulary pass names the Kokiri route (kokiri_child, mido, saria,
+#: shopkeeper, shop_item, deku_tree, rolling_boulder, signpost,
+#: gossip_stone, rock, tree, house doors) and finally names DROPS from
+#: their params (En_Item00: green/blue/red rupee, recovery heart and the
+#: rest, `dropped_item` where the vocabulary still has a gap) — the
+#: explicitly-deferred item, commissioned; the 40-rupee hunt is all
+#: drops.
+OCARINA_VERSION = "0.9.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

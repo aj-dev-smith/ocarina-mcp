@@ -88,7 +88,9 @@ class TestTools(ServerCase):
         self.assertTrue(body["game_connected"])
 
     def test_not_yet_tools_error_honestly(self):
-        result = self.call_tool("buy", {"item": "deku_shield"})
+        # equip and buy left this list in 0.9.0 (docs/28); play_song still
+        # waits on real note-entry UI.
+        result = self.call_tool("play_song", {"name": "zeldas_lullaby"})
         self.assertTrue(result["isError"])
         self.assertIn("not yet implemented", result["content"][0]["text"])
 
