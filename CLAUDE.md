@@ -67,6 +67,17 @@ silently-never-fires transition shape, twice).
   sixth-flight (still the same line) adds the place-flight bodies
   (refusal probe, spider probe, ascend_to_3f v1→v5 with post-mortems
   in-file) and the acceptance flight's full journal, death included.
+- **`lab/brainviz/`** — the brain viewer (2026-08-04): `--brainviz
+  43385` serves a live force-directed view of the running machine
+  (active node, edges pulsing by outcome, armed `when` guards, the
+  Mind orb that wake beams climb while the world freezes, a
+  repeat-collapsing journal ticker). One-way by construction — the
+  overlay pattern pointed at a browser: `ocarina/brainviz.py` is the
+  spigot (GET-only HTTP + SSE on a daemon thread, fed by an
+  `EventLog.observers` mirror), `lab/brainviz/viewer.html` is the whole
+  app (self-contained, read per request — edit, refresh, no restart).
+  Read its README first. Survives server restarts; replays fossils via
+  the backlog. Lab-grade: no contract change rides with it.
 - **`lab/navgraph/`** — the place-sense feasibility lab (2026-08-03,
   fifth flight): stdlib pipeline that parses scene collision out of
   SoH's `oot.o2r`, flood-fills it into a region graph with typed climb

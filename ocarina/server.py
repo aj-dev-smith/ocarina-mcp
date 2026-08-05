@@ -28,6 +28,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import MACHINE_FORMAT_VERSION, OCARINA_VERSION, senses
+from .brainviz import Brainviz
 from .events import EventLog
 from .game import Game
 from .link import GameLink, LinkError
@@ -404,6 +405,10 @@ def main(argv=None) -> int:
                         help="SoH's oot.o2r (the collision source the place "
                              "sense distills region graphs from); without it "
                              "the place sense is OFF, loudly")
+    parser.add_argument("--brainviz", type=int, default=None, metavar="PORT",
+                        help="serve the brain viewer (lab/brainviz) on this "
+                             "local port — a one-way debug view of the live "
+                             "machine, off by default")
     args = parser.parse_args(argv)
 
     link = GameLink(host=args.host, port=args.port)
@@ -414,6 +419,12 @@ def main(argv=None) -> int:
                              place=PlaceSense(args.o2r))
     core = ServerCore(game, runtime, log)
 
+    viz = None
+    if args.brainviz is not None:
+        viz = Brainviz(runtime, log, port=args.brainviz)
+        url = viz.start()      # a taken port fails the boot, loudly
+        log.record({"event": "diagnostic", "text": f"brainviz serving at {url}"})
+
     link.start()
     runtime.load()    # rehydrate from the repo: live state is never the only copy
     threading.Thread(target=runtime.run, daemon=True, name="runtime").start()
@@ -421,5 +432,7 @@ def main(argv=None) -> int:
         serve(core)
     finally:
         runtime.stop()
+        if viz is not None:
+            viz.stop()
         link.stop()
     return 0

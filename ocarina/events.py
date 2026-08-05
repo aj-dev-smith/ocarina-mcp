@@ -30,6 +30,12 @@ class EventLog:
         self._lock = threading.Lock()
         self._seq = 0
         self.persist_path = Path(persist_path) if persist_path else None
+        #: Best-effort mirrors (brainviz's SSE fan-out). Called with the
+        #: stored event OUTSIDE the lock, after ring + journal; must not
+        #: mutate it, must not block, and a raising observer is dropped
+        #: from the flow for that event, never propagated — the log is
+        #: on the 20 Hz path and a debug passenger cannot take it down.
+        self.observers: list = []
 
     def record(self, event: dict, frames: Optional[int] = None) -> dict:
         """Stamp and append. Returns the stored event (a copy)."""
@@ -52,6 +58,11 @@ class EventLog:
                     # The ring still has it; a full disk must not take the
                     # machine down. Visible in the next status() read.
                     pass
+        for observe in list(self.observers):
+            try:
+                observe(ev)
+            except Exception:
+                pass
         return ev
 
     def tail(self, n: int = 30, category: Optional[str] = None,

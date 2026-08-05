@@ -709,6 +709,14 @@ class MachineRuntime:
                 pass
         return self.place.document(self._last_state)
 
+    def guard_edges(self) -> dict:
+        """Brainviz read (one-way, debug): the current truth value of
+        every in-scope `when` guard — the _sweep_when edge state. This is
+        the armed-reflex display: a guard sitting True is holding its
+        hysteresis, a guard flipping False→True is about to fire."""
+        with self._lock:
+            return dict(self._edges)
+
     def machine_view(self) -> dict:
         """oot://machine — declared vs LIVE as two columns (the conjunction
         discipline: 'repo says armed' != 'server confirms armed')."""

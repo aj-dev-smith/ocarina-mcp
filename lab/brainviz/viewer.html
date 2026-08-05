@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>the brain of Link — ocarina brainviz</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+<style>
+  /* Palette: a dungeon-dark instrument beside the game window.
+     Forest-black field, moss ink, Navi-cyan for the living present,
+     Kokiri green / amber / heart red for outcomes, candle gold for
+     the Mind. */
+  :root {
+    --field:   #0a110c;
+    --panel:   #0e1710;
+    --line:    #1d2b20;
+    --ink:     #c8dcc9;
+    --ink-dim: #6f8471;
+    --navi:    #9fe8ff;
+    --kokiri:  #7ec850;
+    --amber:   #e0aa4e;
+    --heart:   #e0524d;
+    --mind:    #f0e3b4;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --serif: "Iowan Old Style", "Palatino", Georgia, serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--field);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* -- header ------------------------------------------------------- */
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding: 10px 16px 8px;
+    border-bottom: 1px solid var(--line);
+    flex: none;
+  }
+  header h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 17px;
+    letter-spacing: 0.14em;
+    font-variant-caps: small-caps;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  header .sub { color: var(--ink-dim); font-size: 11px; }
+  header .spacer { flex: 1; }
+  .chip {
+    font-size: 11px;
+    padding: 2px 9px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+  }
+  .chip.on   { color: var(--kokiri); border-color: #2c4a26; }
+  .chip.off  { color: var(--heart);  border-color: #52302c; }
+  .chip.frozen { color: var(--mind); border-color: #4a4226; }
+
+  /* -- stage -------------------------------------------------------- */
+  #stage { flex: 1; position: relative; min-height: 0; }
+  #stage svg { width: 100%; height: 100%; display: block; }
+  #world { transition: filter 0.6s ease; }
+  body.frozen  #world { filter: saturate(0.25) brightness(0.75); }
+  body.offline #world { filter: saturate(0.1) brightness(0.5); }
+
+  #offline-banner {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  body.offline #offline-banner { display: flex; }
+  #offline-banner span {
+    font-family: var(--serif);
+    font-variant-caps: small-caps;
+    letter-spacing: 0.3em;
+    font-size: 20px;
+    color: var(--ink-dim);
+    background: rgba(10,17,12,0.7);
+    padding: 10px 28px;
+    border: 1px solid var(--line);
+  }
+
+  /* graph text */
+  text { font-family: var(--mono); fill: var(--ink); user-select: none; }
+  .node-label   { font-size: 12px; text-anchor: middle; }
+  .node-chip    { font-size: 10px; text-anchor: middle; fill: var(--ink-dim); }
+  .ring-label   { font-size: 10px; fill: var(--ink-dim); }
+  .mind-label {
+    font-family: var(--serif);
+    font-variant-caps: small-caps;
+    letter-spacing: 0.22em;
+    font-size: 12px;
+    fill: var(--mind);
+    text-anchor: middle;
+  }
+  .mind-state { font-size: 10px; fill: var(--ink-dim); text-anchor: middle; }
+
+  .node circle.body {
+    fill: #14211665;
+    stroke: var(--ink-dim);
+    stroke-width: 1.2;
+    cursor: grab;
+  }
+  .node.instrument circle.body { stroke-dasharray: 3 3; }
+  .node.active circle.body { stroke: var(--navi); stroke-width: 2; }
+  .node circle.halo { fill: none; stroke: var(--navi); opacity: 0; }
+  .node.active circle.halo { opacity: 0.7; animation: breathe 2.4s ease-in-out infinite; }
+  @keyframes breathe {
+    0%, 100% { stroke-opacity: 0.15; r-mult: 1; }
+    50%      { stroke-opacity: 0.55; }
+  }
+  .node .dwell { fill: var(--kokiri); pointer-events: none; }
+
+  .edge { fill: none; stroke: var(--ink-dim); stroke-opacity: 0.5; stroke-width: 1.2; }
+  .edge.state   { stroke-dasharray: 5 4; }
+  .edge.default { stroke-dasharray: 1 4; stroke-opacity: 0.3; }
+  .edge.armed   { stroke: var(--amber); stroke-opacity: 0.95; }
+  .edge.pulse-success { stroke: var(--kokiri); }
+  .edge.pulse-failure { stroke: var(--amber); }
+  .edge.pulse-neutral { stroke: var(--navi); }
+  .edge.pulse-success, .edge.pulse-failure, .edge.pulse-neutral {
+    stroke-opacity: 1; stroke-width: 2.4;
+    transition: none;
+  }
+  .edgehit { fill: none; stroke: transparent; stroke-width: 12; cursor: pointer; }
+
+  .hull { fill: #7ec85009; stroke: #7ec85033; stroke-width: 1; }
+  .hull-label { font-size: 10px; fill: #7ec85088; letter-spacing: 0.15em; }
+
+  #brainstem circle {
+    fill: none; stroke: var(--line); stroke-width: 1;
+  }
+  .stem-seg { stroke: var(--ink-dim); stroke-opacity: 0.6; stroke-width: 3; fill: none; }
+  .stem-seg.flash { stroke: var(--amber); stroke-opacity: 1; }
+  .stem-seg.wakes { stroke: #8a7d52; }
+
+  #beam {
+    stroke: var(--mind); stroke-width: 2; fill: none;
+    stroke-dasharray: 6 8;
+    opacity: 0;
+  }
+  body.frozen #beam { opacity: 0.9; animation: flow 0.8s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -14; } }
+
+  #mind-orb { cursor: default; }
+  #mind-core { fill: var(--mind); }
+  #mind-glow { fill: none; stroke: var(--mind); opacity: 0.25; }
+  body.frozen #mind-glow { animation: mindpulse 1.6s ease-in-out infinite; }
+  @keyframes mindpulse {
+    0%, 100% { opacity: 0.2; }
+    50%      { opacity: 0.8; }
+  }
+
+  /* -- inspector ---------------------------------------------------- */
+  #inspector {
+    position: absolute;
+    top: 12px; right: 12px;
+    width: 320px;
+    max-height: calc(100% - 24px);
+    overflow-y: auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 12px 14px;
+    display: none;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  #inspector.open { display: block; }
+  #inspector h2 { font-size: 13px; color: var(--navi); font-weight: 600; margin-bottom: 2px; }
+  #inspector .kind { color: var(--ink-dim); font-size: 10px; letter-spacing: 0.1em; }
+  #inspector .desc { color: var(--ink-dim); margin: 6px 0; }
+  #inspector .grade { color: var(--amber); margin-bottom: 6px; }
+  #inspector .t { border-top: 1px solid var(--line); padding: 6px 0; }
+  #inspector .t .tname { color: var(--ink); }
+  #inspector .t .cond  { color: var(--ink-dim); word-break: break-word; }
+  #inspector .t .cond.armed { color: var(--amber); }
+  #inspector .t .acts  { color: var(--kokiri); }
+  #inspector .close {
+    float: right; cursor: pointer; color: var(--ink-dim);
+    border: none; background: none; font: inherit; padding: 0 2px;
+  }
+  #inspector .close:focus-visible, .node:focus-visible circle.body { outline: 1px solid var(--navi); }
+
+  /* -- status strip + ticker ---------------------------------------- */
+  #statusbar {
+    flex: none;
+    display: flex; gap: 18px;
+    padding: 6px 16px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-dim);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  #statusbar b { color: var(--ink); font-weight: 500; }
+  #statusbar .directive { color: var(--amber); overflow: hidden; text-overflow: ellipsis; }
+
+  #ticker {
+    flex: none;
+    height: 128px;
+    overflow-y: hidden;
+    padding: 4px 16px 8px;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  #ticker .line { display: flex; gap: 10px; line-height: 1.55; }
+  #ticker .wall { color: #46584a; flex: none; }
+  #ticker .dot  { flex: none; width: 1.2em; text-align: center; }
+  #ticker .txt  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #ticker .rep  { color: var(--ink-dim); flex: none; }
+  .c-journal    { color: var(--ink); }
+  .c-diagnostic { color: var(--ink-dim); }
+  .c-wake       { color: var(--mind); }
+  .c-success    { color: var(--kokiri); }
+  .c-failure    { color: var(--amber); }
+  .c-damage     { color: var(--heart); }
+  .c-world      { color: var(--navi); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body class="offline">
+
+<header>
+  <h1>The Brain of Link</h1>
+  <span class="sub">ocarina brainviz — one-way debug view</span>
+  <span class="spacer"></span>
+  <span class="chip" id="chip-hash">machine —</span>
+  <span class="chip" id="chip-frozen" hidden>frozen</span>
+  <span class="chip off" id="chip-link">offline</span>
+</header>
+
+<div id="stage">
+  <svg id="svg" role="img" aria-label="live state machine graph">
+    <g id="world">
+      <g id="hulls"></g>
+      <g id="brainstem"></g>
+      <g id="edges"></g>
+      <g id="nodes"></g>
+    </g>
+    <path id="beam" d=""></path>
+    <g id="mind-orb">
+      <circle id="mind-glow" r="26"></circle>
+      <circle id="mind-core" r="7"></circle>
+      <text class="mind-label" dy="-20">mind</text>
+      <text class="mind-state" dy="34" id="mind-state">asleep</text>
+    </g>
+  </svg>
+  <div id="offline-banner"><span>brain offline</span></div>
+  <div id="inspector"></div>
+</div>
+
+<div id="statusbar">
+  <span>node <b id="s-node">—</b></span>
+  <span>behavior <b id="s-behavior">—</b></span>
+  <span>wakes <b id="s-wakes">0</b></span>
+  <span class="directive" id="s-directive"></span>
+</div>
+
+<div id="ticker" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ================================================================
+   brainviz viewer — one self-contained file, no dependencies.
+   Reads /topology (declared structure) + /stream (SSE: backlog,
+   live events, ~1 Hz status). Renders and never talks back.
+   ================================================================ */
+
+const svg = document.getElementById("svg");
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const el = (name, attrs, parent) => {
+  const e = document.createElementNS(NS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+
+/* -- model -------------------------------------------------------- */
+
+const G = {
+  nodes: new Map(),      // name -> {name,parent,leaf,behavior,x,y,vx,vy,r,dwell,instrument,el,...}
+  edges: [],             // {from,to,kind,tname,cls,el}
+  hulls: [],             // {name, members:[names], el, labelEl}
+  stems: [],             // root transitions -> {t, el, arc}
+  transByName: new Map(),// transition name -> {edge|stem}
+  hash: null,
+  topo: null,
+  current: null,         // active leaf
+  chain: new Set(),      // active scope chain
+  wakeNode: null,
+  frozenSince: null,
+};
+
+function hashSeed(s) {          // deterministic layout seed per name
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) / 4294967295;
+}
+
+function nodeRadius(n) {
+  const loc = n.behavior && n.behavior.loc || 40;
+  return Math.max(14, Math.min(34, 8 + Math.sqrt(loc) * 2.2));
+}
+
+async function loadTopology() {
+  const resp = await fetch("/topology");
+  const topo = await resp.json();
+  if (topo.error) { ticker({event: "diagnostic", text: "topology: " + topo.error}); return; }
+  buildGraph(topo);
+  $("chip-hash").textContent = "machine " + (topo.hash || "").slice(0, 8);
+}
+
+function buildGraph(topo) {
+  const kept = G.nodes;               // survivors keep their positions
+  G.topo = topo; G.hash = topo.hash;
+  G.nodes = new Map(); G.edges = []; G.hulls = []; G.stems = [];
+  G.transByName = new Map();
+
+  const { cx, cy, R } = geometry();
+  const gotoTargets = new Set([topo.initial]);
+  for (const n of topo.nodes)
+    for (const t of n.transitions) {
+      for (const a of t.do) if (a.verb === "goto") gotoTargets.add(a.arg);
+      if (t.default && t.default.verb === "goto") gotoTargets.add(t.default.arg);
+    }
+
+  for (const n of topo.nodes) {
+    const old = kept.get(n.name);
+    const seed = hashSeed(n.name);
+    const node = {
+      name: n.name, parent: n.parent, transitions: n.transitions,
+      leaf: !!n.behavior, behavior: n.behavior || null,
+      initial: n.initial, children: n.children || [],
+      instrument: n.behavior && !gotoTargets.has(n.name),
+      x: old ? old.x : cx + Math.cos(seed * Math.PI * 2) * R * 0.55,
+      y: old ? old.y : cy + Math.sin(seed * Math.PI * 2) * R * 0.55,
+      vx: 0, vy: 0, dwell: old ? old.dwell : 0,
+      pinned: old ? old.pinned : false,
+    };
+    node.r = nodeRadius(node);
+    G.nodes.set(n.name, node);
+  }
+
+  // Edges: every goto is a wire; wake actions beam to the Mind.
+  const addEdges = (owner, ts) => {
+    for (const t of ts) {
+      let edge = null;
+      for (const a of t.do) {
+        if (a.verb === "goto" && G.nodes.has(a.arg) && owner && G.nodes.has(owner)) {
+          edge = { from: owner, to: a.arg, kind: t.kind, tname: t.name,
+                   cls: t.kind === "state" ? "state" : "event",
+                   self: a.arg === owner, on: t.on };
+          G.edges.push(edge);
+        }
+        if (a.verb === "wake") {
+          const stem = !owner;
+          const rec = { t, wakes: true, owner };
+          if (stem) G.stems.push(rec); else if (!edge) edge = { wake: true };
+          if (owner) G.transByName.set(t.name, { wakeFrom: owner });
+        }
+      }
+      if (t.default && t.default.verb === "goto" && owner
+          && G.nodes.has(owner) && G.nodes.has(t.default.arg))
+        G.edges.push({ from: owner, to: t.default.arg, kind: "default",
+                       tname: t.name + " (default)", cls: "default",
+                       self: t.default.arg === owner });
+      if (edge && edge.from) G.transByName.set(t.name, { edge });
+    }
+  };
+  for (const n of topo.nodes) addEdges(n.name, n.transitions);
+
+  // Root transitions form the brainstem ring, not per-node edges.
+  for (const t of topo.root_transitions)
+    G.stems.push({ t, wakes: t.do.some(a => a.verb === "wake") });
+
+  // Interior nodes render as hulls around their children.
+  for (const n of topo.nodes)
+    if (!n.behavior && n.children && n.children.length)
+      G.hulls.push({ name: n.name, members: n.children });
+
+  render();
+}
+
+/* -- geometry + force layout --------------------------------------- */
+
+function geometry() {
+  const w = svg.clientWidth || 900, h = svg.clientHeight || 600;
+  return { w, h, cx: w / 2, cy: h * 0.56, R: Math.min(w, h * 1.12) * 0.36 };
+}
+
+function step() {
+  const { cx, cy, R } = geometry();
+  const nodes = [...G.nodes.values()];
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i];
+    for (let j = i + 1; j < nodes.length; j++) {
+      const b = nodes[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let d2 = dx * dx + dy * dy || 1;
+      const min = (a.r + b.r) * 3.2 + 24;   // labels need air, not just circles
+      if (d2 < min * min * 4) {
+        const d = Math.sqrt(d2);
+        const f = Math.min(6, (min * min) / d2) * 0.6;
+        dx /= d; dy /= d;
+        a.vx -= dx * f; a.vy -= dy * f;
+        b.vx += dx * f; b.vy += dy * f;
+      }
+    }
+    // gravity to center; containment inside the brainstem ring
+    a.vx += (cx - a.x) * 0.0035;
+    a.vy += (cy - a.y) * 0.0035;
+    const dx = a.x - cx, dy = a.y - cy, d = Math.hypot(dx, dy);
+    const lim = R - a.r - 26;
+    if (d > lim) { a.vx -= dx / d * (d - lim) * 0.06; a.vy -= dy / d * (d - lim) * 0.06; }
+  }
+  for (const e of G.edges) {
+    if (e.self) continue;
+    const a = G.nodes.get(e.from), b = G.nodes.get(e.to);
+    if (!a || !b) continue;
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+    const want = (a.r + b.r) * 2.8 + 44;
+    const f = (d - want) / d * 0.012;
+    a.vx += dx * f; a.vy += dy * f;
+    b.vx -= dx * f; b.vy -= dy * f;
+  }
+  // siblings under one hull drift together
+  for (const h of G.hulls) {
+    const members = h.members.map(m => G.nodes.get(m)).filter(Boolean);
+    if (members.length < 2) continue;
+    const mx = members.reduce((s, m) => s + m.x, 0) / members.length;
+    const my = members.reduce((s, m) => s + m.y, 0) / members.length;
+    for (const m of members) { m.vx += (mx - m.x) * 0.004; m.vy += (my - m.y) * 0.004; }
+  }
+  for (const n of nodes) {
+    if (n.pinned) { n.vx = 0; n.vy = 0; continue; }
+    n.vx *= 0.86; n.vy *= 0.86;
+    n.x += n.vx; n.y += n.vy;
+  }
+}
+
+/* -- rendering ------------------------------------------------------ */
+
+function render() {
+  const hulls = $("hulls"), edges = $("edges"), nodes = $("nodes"), stem = $("brainstem");
+  hulls.innerHTML = ""; edges.innerHTML = ""; nodes.innerHTML = ""; stem.innerHTML = "";
+
+  for (const h of G.hulls) {
+    h.el = el("path", { class: "hull" }, hulls);
+    h.labelEl = el("text", { class: "hull-label" }, hulls);
+    h.labelEl.textContent = h.name;
+  }
+  const { cx, cy, R } = geometry();
+  el("circle", { cx, cy, r: R }, stem);
+  const n = G.stems.length;
+  G.stems.forEach((s, i) => {
+    const a0 = (i / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2 + 0.06;
+    const a1 = ((i + 1) / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2 - 0.06;
+    const p = arcPath(cx, cy, R, a0, a1);
+    s.el = el("path", { class: "stem-seg" + (s.wakes ? " wakes" : ""), d: p }, stem);
+    const mid = (a0 + a1) / 2;
+    const lx = cx + Math.cos(mid) * (R + 14), ly = cy + Math.sin(mid) * (R + 14);
+    const anchor = Math.cos(mid) > 0.3 ? "start" : Math.cos(mid) < -0.3 ? "end" : "middle";
+    const label = el("text", { class: "ring-label", x: lx, y: ly, "text-anchor": anchor }, stem);
+    label.textContent = s.t.name;
+    G.transByName.set(s.t.name, { stem: s });
+  });
+
+  for (const e of G.edges) {
+    e.el = el("path", { class: "edge " + e.cls }, edges);
+    e.hit = el("path", { class: "edgehit" }, edges);
+    e.hit.addEventListener("click", () => inspectTransition(e));
+  }
+  for (const node of G.nodes.values()) {
+    const g = el("g", { class: "node" + (node.instrument ? " instrument" : ""),
+                        tabindex: 0 }, nodes);
+    node.el = g;
+    node.dwellEl = el("circle", { class: "dwell", r: 0 }, g);
+    node.haloEl = el("circle", { class: "halo", r: node.r + 6 }, g);
+    node.bodyEl = el("circle", { class: "body", r: node.r }, g);
+    const label = el("text", { class: "node-label", dy: node.r + 15 }, g);
+    label.textContent = node.name;
+    if (node.behavior) {
+      const chip = el("text", { class: "node-chip", dy: node.r + 28 }, g);
+      chip.textContent = node.behavior.name || "";
+    }
+    attachDrag(node);
+    g.addEventListener("click", () => inspectNode(node));
+  }
+  refreshActive();
+}
+
+function arcPath(cx, cy, r, a0, a1) {
+  const x0 = cx + Math.cos(a0) * r, y0 = cy + Math.sin(a0) * r;
+  const x1 = cx + Math.cos(a1) * r, y1 = cy + Math.sin(a1) * r;
+  const large = (a1 - a0) > Math.PI ? 1 : 0;
+  return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
+}
+
+function edgePath(e) {
+  const a = G.nodes.get(e.from), b = G.nodes.get(e.to);
+  if (!a || !b) return "";
+  if (e.self) {
+    const r = a.r;
+    return `M ${a.x + r * 0.5} ${a.y - r * 0.87} a ${r * 0.75} ${r * 0.75} 0 1 1 ${r * 0.6} ${r * 0.45}`;
+  }
+  const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+  const x0 = a.x + dx / d * a.r, y0 = a.y + dy / d * a.r;
+  const x1 = b.x - dx / d * (b.r + 4), y1 = b.y - dy / d * (b.r + 4);
+  const mx = (x0 + x1) / 2 - dy / d * 14, my = (y0 + y1) / 2 + dx / d * 14;
+  return `M ${x0} ${y0} Q ${mx} ${my} ${x1} ${y1}`;
+}
+
+function frame() {
+  step();
+  for (const e of G.edges) {
+    if (!e.el) continue;
+    const p = edgePath(e);
+    e.el.setAttribute("d", p);
+    e.hit.setAttribute("d", p);
+  }
+  for (const n of G.nodes.values()) {
+    if (!n.el) continue;
+    n.el.setAttribute("transform", `translate(${n.x},${n.y})`);
+    const dwellR = Math.min(n.r - 3, Math.sqrt(n.dwell) * 0.9);
+    n.dwellEl.setAttribute("r", Math.max(0, dwellR));
+    n.dwellEl.setAttribute("opacity", 0.12 + Math.min(0.25, n.dwell / 2000));
+  }
+  for (const h of G.hulls) {
+    const members = h.members.map(m => G.nodes.get(m)).filter(Boolean);
+    if (!members.length || !h.el) continue;
+    h.el.setAttribute("d", hullPath(members));
+    const top = members.reduce((a, m) => m.y - m.r < a.y - a.r ? m : a);
+    h.labelEl.setAttribute("x", top.x);
+    h.labelEl.setAttribute("y", top.y - top.r - 34);
+  }
+  // Mind orb sits top-center; the beam tracks the waking node.
+  const { w } = geometry();
+  $("mind-orb").setAttribute("transform", `translate(${w / 2}, 56)`);
+  if (G.wakeNode && G.nodes.has(G.wakeNode)) {
+    const n = G.nodes.get(G.wakeNode);
+    $("beam").setAttribute("d", `M ${n.x} ${n.y - n.r} L ${w / 2} 76`);
+  }
+  if (G.frozenSince != null)
+    $("mind-state").textContent = `thinking · ${Math.round((Date.now() - G.frozenSince) / 1000)}s`;
+  // dwell accrues on the active leaf
+  if (G.current && G.nodes.has(G.current)) G.nodes.get(G.current).dwell += 1 / 60;
+  requestAnimationFrame(frame);
+}
+
+function hullPath(members) {
+  // Convex hull of member circles, padded — a soft region around siblings.
+  const pts = [];
+  for (const m of members)
+    for (let a = 0; a < 8; a++)
+      pts.push([m.x + Math.cos(a * Math.PI / 4) * (m.r + 26),
+                m.y + Math.sin(a * Math.PI / 4) * (m.r + 26)]);
+  pts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [], upper = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  for (const p of pts.reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+  return "M " + hull.map(p => p.join(" ")).join(" L ") + " Z";
+}
+
+function attachDrag(node) {
+  let dragging = false;
+  node.el.addEventListener("pointerdown", ev => {
+    dragging = true; node.pinned = true;
+    node.el.setPointerCapture(ev.pointerId);
+  });
+  node.el.addEventListener("pointermove", ev => {
+    if (!dragging) return;
+    const r = svg.getBoundingClientRect();
+    node.x = ev.clientX - r.left; node.y = ev.clientY - r.top;
+  });
+  node.el.addEventListener("pointerup", () => { dragging = false; node.pinned = false; });
+}
+
+/* -- inspector ------------------------------------------------------ */
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function inspectNode(node) {
+  const b = node.behavior;
+  let html = `<button class="close" onclick="this.parentElement.classList.remove('open')">×</button>`;
+  html += `<h2>${esc(node.name)}</h2>`;
+  html += `<div class="kind">${node.leaf ? (node.instrument ? "leaf · instrument (force_state only)" : "leaf") : "scope"}</div>`;
+  if (b) {
+    html += `<div class="desc">${esc(b.name || "")}${b.loc ? ` · ${b.loc} lines` : ""}${b.timeout_s ? ` · ${b.timeout_s}s cap` : ""}</div>`;
+    if (b.description) html += `<div class="desc">${esc(b.description)}</div>`;
+    if (b.grade) html += `<div class="grade">${esc(b.grade)}</div>`;
+  }
+  for (const t of node.transitions || []) html += transitionHtml(t);
+  const insp = $("inspector");
+  insp.innerHTML = html;
+  insp.classList.add("open");
+}
+
+function inspectTransition(e) {
+  const owner = G.nodes.get(e.from);
+  const t = owner && (owner.transitions || []).find(t => t.name === e.tname.replace(" (default)", ""));
+  if (owner && t) {
+    const insp = $("inspector");
+    insp.innerHTML = `<button class="close" onclick="this.parentElement.classList.remove('open')">×</button>`
+      + `<h2>${esc(e.tname)}</h2><div class="kind">${esc(e.from)} → ${esc(e.to)}</div>`
+      + transitionHtml(t);
+    insp.classList.add("open");
+  }
+}
+
+function transitionHtml(t) {
+  let cond = t.kind === "state" ? `when ${t.guard || ""}` :
+    `on ${t.on || "?"}` + (t.guard ? ` where ${t.guard}` : "");
+  const acts = t.do.map(a => `${a.verb} ${a.arg}`).join(" · ");
+  const dflt = t.default ? ` <span class="cond">default: ${esc(t.default.verb)} ${esc(t.default.arg)}</span>` : "";
+  const cd = t.cooldown_s ? ` <span class="cond">cooldown ${t.cooldown_s}s</span>` : "";
+  const armed = armedGuards[t.name] ? " armed" : "";
+  return `<div class="t"><div class="tname">${esc(t.name)}</div>`
+    + `<div class="cond${armed}">${esc(cond)}</div>`
+    + `<div class="acts">${esc(acts)}</div>${dflt}${cd}</div>`;
+}
+
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") $("inspector").classList.remove("open");
+});
+
+/* -- live state ----------------------------------------------------- */
+
+let armedGuards = {};
+
+function refreshActive() {
+  for (const n of G.nodes.values())
+    if (n.el) n.el.classList.toggle("active", G.chain.has(n.name) || n.name === G.current);
+  for (const h of G.hulls)
+    if (h.el) h.el.style.stroke = G.chain.has(h.name) ? "#7ec85088" : "";
+}
+
+function setFrozen(frozen) {
+  document.body.classList.toggle("frozen", frozen);
+  $("chip-frozen").hidden = !frozen;
+  if (frozen && G.frozenSince == null) G.frozenSince = Date.now();
+  if (!frozen) { G.frozenSince = null; G.wakeNode = null; $("mind-state").textContent = "asleep"; }
+}
+
+function pulseEdge(tname, outcome) {
+  const rec = G.transByName.get(tname);
+  if (!rec) return;
+  const cls = outcome === "success" ? "pulse-success"
+            : outcome === "failure" || outcome === "timeout" ? "pulse-failure"
+            : "pulse-neutral";
+  if (rec.edge && rec.edge.el) flash(rec.edge.el, cls);
+  if (rec.stem && rec.stem.el) flash(rec.stem.el, "flash");
+}
+
+function flash(elm, cls) {
+  elm.classList.add(cls);
+  setTimeout(() => elm.classList.remove(cls), 1200);
+}
+
+function onEvent(ev, live) {
+  const kind = ev.event;
+  if (kind === "entered") {
+    const n = G.nodes.get(ev.node);
+    if (n) {
+      if (n.leaf) G.current = ev.node;
+      G.chain.add(ev.node);
+      refreshActive();
+    }
+    const m = /transition (\S+)/.exec(ev.reason || "");
+    if (live && m) pulseEdge(m[1]);
+    return;                                           // too chatty for the ticker
+  }
+  if (kind === "exited") {
+    G.chain.delete(ev.node);
+    if (G.current === ev.node) G.current = null;
+    refreshActive();
+    return;
+  }
+  if (kind === "wake") {
+    const rec = G.transByName.get(ev.transition);
+    G.wakeNode = rec && rec.wakeFrom ? rec.wakeFrom : G.current;
+    if (rec && rec.stem && live) flash(rec.stem.el, "flash");
+    setFrozen(true);
+  }
+  if (kind === "directive") $("s-directive").textContent = "» " + (ev.text || "");
+  if (live && ev.transition) pulseEdge(ev.transition, ev.outcome);
+  if (live && kind === "behavior_done" && G.current) {
+    const n = G.nodes.get(G.current);
+    if (n) flash(n.bodyEl, "pulse-" + (ev.outcome === "success" ? "success"
+      : ev.outcome === "failure" || ev.outcome === "timeout" ? "failure" : "neutral"));
+  }
+  ticker(ev);
+}
+
+/* -- ticker --------------------------------------------------------- */
+
+const TICKER_MAX = 7;
+let lastLine = null;
+
+function tickerClass(ev) {
+  if (ev.event === "behavior_done")
+    return ev.outcome === "success" ? "c-success"
+         : ev.outcome === "damage" || ev.outcome === "death" ? "c-damage" : "c-failure";
+  if (ev.event === "behavior_aborted") return "c-failure";
+  if (ev.event === "damage_taken" || ev.event === "death") return "c-damage";
+  if (ev.event === "wake" || ev.event === "escalation") return "c-wake";
+  if (ev.event === "journal") return "c-journal";
+  if (ev.event === "diagnostic" || ev.event === "directive") return "c-diagnostic";
+  return "c-world";
+}
+
+function tickerText(ev) {
+  if (ev.text) return ev.text;
+  if (ev.event === "behavior_done")
+    return `${ev.behavior} → ${ev.outcome}${ev.detail ? " — " + ev.detail : ""} (${ev.duration_s}s)`;
+  if (ev.event === "behavior_aborted") return `${ev.behavior} preempted — ${ev.reason}`;
+  if (ev.event === "wake") return `WAKE [${ev.transition}] ${ev.reason}`;
+  const rest = Object.entries(ev)
+    .filter(([k]) => !["event", "seq", "t", "wall"].includes(k))
+    .map(([k, v]) => `${k}=${v}`).join(" ");
+  return `${ev.event} ${rest}`;
+}
+
+function ticker(ev) {
+  const text = tickerText(ev);
+  const t = $("ticker");
+  // The stand_watch idle loop lesson: collapse repeats into ×N.
+  if (lastLine && lastLine.text === text) {
+    lastLine.count++;
+    lastLine.repEl.textContent = "×" + lastLine.count;
+    return;
+  }
+  const line = document.createElement("div");
+  line.className = "line";
+  const wall = document.createElement("span");
+  wall.className = "wall";
+  wall.textContent = (ev.wall || "").slice(11) || "—";
+  const dot = document.createElement("span");
+  dot.className = "dot " + tickerClass(ev);
+  dot.textContent = "●";
+  const txt = document.createElement("span");
+  txt.className = "txt " + tickerClass(ev);
+  txt.textContent = text;
+  const rep = document.createElement("span");
+  rep.className = "rep";
+  line.append(wall, dot, txt, rep);
+  t.appendChild(line);
+  while (t.children.length > TICKER_MAX) t.removeChild(t.firstChild);
+  lastLine = { text, count: 1, repEl: rep };
+}
+
+/* -- status + stream ------------------------------------------------ */
+
+let lastStatusNode = null;
+
+function onStatus(st) {
+  $("s-node").textContent = st.current_node || "—";
+  $("s-behavior").textContent = st.behavior_running || "idle";
+  $("s-wakes").textContent = st.wakes;
+  setFrozen(!!st.frozen);
+  if (st.frozen && !G.wakeNode) G.wakeNode = st.current_node;
+  // Reconcile only when the STATUS view changes: a repeated snapshot
+  // must not out-vote the event stream between beats (journal replay
+  // depends on this; live they agree anyway).
+  if (st.current_node && st.current_node !== lastStatusNode
+      && G.nodes.has(st.current_node)) {
+    lastStatusNode = st.current_node;
+    if (G.current !== st.current_node) {
+      G.current = st.current_node;
+      refreshActive();
+    }
+  }
+  armedGuards = st.guard_edges || {};
+  for (const [tname, hot] of Object.entries(armedGuards)) {
+    const rec = G.transByName.get(tname);
+    if (rec && rec.edge && rec.edge.el) rec.edge.el.classList.toggle("armed", !!hot);
+    if (rec && rec.stem && rec.stem.el) rec.stem.el.classList.toggle("flash", !!hot);
+  }
+  if (st.machine_hash && G.hash && st.machine_hash !== G.hash) {
+    ticker({ event: "diagnostic", text: "machine changed — re-reading topology (brain surgery)" });
+    loadTopology();
+  }
+}
+
+function connect() {
+  const es = new EventSource("/stream");
+  es.onopen = () => {
+    document.body.classList.remove("offline");
+    const chip = $("chip-link");
+    chip.textContent = "linked"; chip.className = "chip on";
+    loadTopology();
+  };
+  es.onerror = () => {
+    document.body.classList.add("offline");
+    const chip = $("chip-link");
+    chip.textContent = "offline"; chip.className = "chip off";
+    // EventSource retries on its own; the offline veil lifts on reopen.
+  };
+  es.addEventListener("backlog", m => {
+    for (const ev of JSON.parse(m.data)) onEvent(ev, false);
+  });
+  es.addEventListener("ev", m => onEvent(JSON.parse(m.data), true));
+  es.addEventListener("status", m => onStatus(JSON.parse(m.data)));
+}
+
+window.addEventListener("resize", () => { if (G.topo) render(); });
+connect();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
