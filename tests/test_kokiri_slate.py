@@ -188,17 +188,28 @@ class FakeShop:
     description box, which is the real game's behaviour
     (z_en_ossan.c:1287,1360) and the only reason cursor position is
     observable at all.
+
+    It also models the TYPEWRITER (docs/28): a fresh box reads
+    "displaying" for `typing_frames` state polls, and while it does, the
+    shop sees neither the stick nor A — an A there only fast-forwards the
+    text. `never_settles` holds a box in that window forever.
     """
 
     def __init__(self, link, right, left, outcome="fanfare", deduct=None,
-                 hello=None):
+                 hello=None, typing_frames=0, never_settles=()):
         self.link, self.right, self.left = link, right, left
         self.outcome = outcome
         self.deduct = deduct
         self.side, self.index = None, 0
         self.phase = "hello" if hello else "browse"
         self.chose_continue = None
+        self.typing_frames, self.never_settles = typing_frames, never_settles
+        self.typing = 0
+        self.a_presses = self.select_presses = self.fast_forwards = 0
+        self.eat_selects = 0
         link.pad_hook = self.on_pad
+        self._link_request = link.request
+        link.request = self.on_request
         link.world.setdefault("rupees", 100)
         link.world["actors"] = [
             {"id": ACTOR_EN_GIRLA, "params": senses.SHOP_CATALOG[name][0],
@@ -209,13 +220,30 @@ class FakeShop:
 
     # -- boxes ---------------------------------------------------------------
 
-    def show(self, text_id, state="awaiting_advance", choices=None):
-        msg = {"text": f"the box for 0x{text_id:X}", "state": state,
+    def show(self, text_id, state=None, choices=None):
+        # Left to itself a shop box types first and settles to "done" —
+        # TEXT_STATE_EVENT, the only state En_Ossan reads inputs in
+        # (z_en_ossan.c:1240,1313). An explicit state skips the typing.
+        typing = 0 if state else self.typing_frames
+        if text_id in self.never_settles:
+            typing = float("inf")
+        self.typing = typing
+        msg = {"text": f"the box for 0x{text_id:X}",
+               "state": "displaying" if typing else (state or "done"),
                "text_id": text_id}
         if choices is not None:
             msg["choices"], msg["choice_index"] = choices, 0
         self.link.world["msg_mode"] = 6
         self.link.world["message"] = msg
+
+    def on_request(self, payload, link_timeout=5.0):
+        # Every state read is a frame of the typewriter: the box the tool
+        # is polling types itself out underneath it.
+        if payload.get("op") == "state" and self.typing:
+            self.typing -= 1
+            if not self.typing:
+                (self.link.world.get("message") or {})["state"] = "done"
+        return self._link_request(payload, link_timeout)
 
     def close(self):
         self.link.world["msg_mode"] = 0
@@ -241,7 +269,7 @@ class FakeShop:
             self.on_stick(1 if stick[0] > 0 else -1)
 
     def on_stick(self, direction):
-        if self.phase != "browse":
+        if self.phase != "browse" or self.typing:
             return
         if self.side is None:
             self.side, self.index = direction, 0
@@ -258,12 +286,26 @@ class FakeShop:
 
     def on_a(self):
         msg = self.link.world.get("message") or {}
+        self.a_presses += 1
+        if self.typing:
+            # The typewriter eats it: this A only fast-forwards the text.
+            self.fast_forwards += 1
+            self.typing = 0
+            msg["state"] = "done"
+            return
         if self.phase == "hello":
             self.phase = "browse"
             self.show(FACING)
         elif self.phase == "browse" and self.side is not None:
             name = self.slots()[self.index]
             if name in getattr(self, "sold_out", ()):    # A does nothing
+                return
+            self.select_presses += 1
+            if self.eat_selects:
+                # The press landed as the shop re-issued the slot's
+                # description: lost, and the box types itself out again.
+                self.eat_selects -= 1
+                self.show_slot()
                 return
             self.phase = "prompt"
             self.show(senses.SHOP_CATALOG[name][3], state="choice",
@@ -433,6 +475,34 @@ class TestBuy(SlateCase):
         text = self.error(self.call_tool("buy", {"item": "deku_shield"}))
         self.assertIn("the wallet does not agree", text)
         self.assertIn("20 rupees left it", text)
+
+    # -- the typewriter (docs/28: the ninth flight's swallowed select-A) --
+
+    def test_waits_out_the_typewriter_before_every_press(self):
+        shop = self.shop(typing_frames=3)
+        result = self.call_tool("buy", {"item": "deku_shield"})
+        self.assertFalse(result["isError"], result["content"][0]["text"])
+        self.assertEqual(self.tool_body(result)["spent"], 40)
+        # Nothing it pressed or nudged ever landed inside the typing window.
+        self.assertEqual(shop.fast_forwards, 0)
+        self.assertEqual(shop.select_presses, 1)
+        self.assertEqual(shop.phase, "done")
+
+    def test_swallowed_select_a_is_retried(self):
+        shop = self.shop(typing_frames=2)
+        shop.eat_selects = 1        # the field's failure: the A vanishes
+        result = self.call_tool("buy", {"item": "deku_shield"})
+        self.assertFalse(result["isError"], result["content"][0]["text"])
+        self.assertEqual(shop.select_presses, 2)
+        self.assertEqual(self.tool_body(result)["spent"], 40)
+
+    def test_description_that_never_settles_refuses_before_the_a(self):
+        desc_id = senses.SHOP_CATALOG["deku_shield"][2]
+        shop = self.shop(never_settles=(desc_id,))
+        text = self.error(self.call_tool("buy", {"item": "deku_shield"}))
+        self.assertIn("never finished typing", text)
+        self.assertIn("0x9F", text)
+        self.assertEqual(shop.a_presses, 0)
 
     def test_old_instrument_reads_blind(self):
         self.shop()

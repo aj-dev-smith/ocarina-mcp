@@ -60,6 +60,14 @@ _BUY_MAX_NUDGES = 20            # eight slots, two shelves, slack for a turn
 _BUY_BOX_TIMEOUT_S = 2.0
 _BUY_POLL_S = 0.1
 _BUY_OUTCOME_TIMEOUT_S = 15.0   # the fanfare is long; a stuck modal is worse
+_BUY_SELECT_TRIES = 3
+
+#: A box still "opening" or "displaying" is typing itself out, and the shop
+#: reads nothing until it stops: En_Ossan takes the stick and the A in
+#: TEXT_STATE_EVENT only (z_en_ossan.c:1240,1313), and an A inside that
+#: window just fast-forwards the typewriter. That is what ate the ninth
+#: flight's first select-A (docs/28).
+_SETTLED_BOX_STATES = ("done", "awaiting_advance", "choice")
 
 
 def _quote_box(msg) -> str:
@@ -510,6 +518,11 @@ class ServerCore:
         if msg.get("text_id") not in shelf_ids | {SHOP_FACING_BOX}:
             # The hello box (or the shopkeeper's own greeting): advance it
             # once and wait for the shop's facing box.
+            if self._settled_box(_BUY_BOX_TIMEOUT_S) is None:
+                return {"ok": False,
+                        "error": "the shopkeeper's box never finished "
+                                 "typing, so an A would only fast-forward "
+                                 "it — " + _quote_box(self._message())}
             self.game.press("A", frames=3)
             msg = self._await_box({SHOP_FACING_BOX}, _BUY_BOX_TIMEOUT_S)
             if msg is None:
@@ -520,9 +533,17 @@ class ServerCore:
         # -- 3. walk the shelves until the item's own box is on screen ----
         direction, on_shelves, turned = 1, False, False
         for _ in range(_BUY_MAX_NUDGES):
-            msg = self._message() or {}
+            # Read the box only once it has settled: a nudge during the
+            # typewriter is eaten, and so is the A below.
+            msg = self._settled_box(_BUY_BOX_TIMEOUT_S) or self._message() or {}
             text_id = msg.get("text_id")
             if text_id == desc_id:
+                if msg.get("state") not in _SETTLED_BOX_STATES:
+                    return {"ok": False,
+                            "error": f"{name}'s description box never "
+                                     f"finished typing, so the A that "
+                                     f"selects the slot would only "
+                                     f"fast-forward it — " + _quote_box(msg)}
                 break
             if text_id != SHOP_FACING_BOX:
                 on_shelves = True
@@ -542,8 +563,20 @@ class ServerCore:
                              + _quote_box(self._message())}
 
         # -- 4. select the slot: the buy prompt must actually come up -----
-        self.game.press("A", frames=3)
-        msg = self._await_box({prompt_id}, _BUY_BOX_TIMEOUT_S, state="choice")
+        # Retried because landing the cursor re-issues the slot's own
+        # description (z_en_ossan.c:1287): an A that arrives while that box
+        # is typing is spent fast-forwarding it, and the shop never sees a
+        # selection. The retry is what the field did by hand (docs/28).
+        msg = None
+        for _ in range(_BUY_SELECT_TRIES):
+            self.game.press("A", frames=3)
+            msg = self._await_box({prompt_id}, _BUY_BOX_TIMEOUT_S,
+                                  state="choice")
+            if msg is not None:
+                break
+            live = self._settled_box(_BUY_BOX_TIMEOUT_S) or {}
+            if live.get("text_id") != desc_id:
+                break       # another box answered: not a swallowed press
         if msg is None:
             return {"ok": False,
                     "error": "slot refused selection (sold out?) — "
@@ -586,6 +619,19 @@ class ServerCore:
             msg = self._message() or {}
             if msg.get("text_id") in text_ids and (state is None
                                                    or msg.get("state") == state):
+                return msg
+            if time.monotonic() >= deadline:
+                return None
+            self.game.wait(_BUY_POLL_S)
+
+    def _settled_box(self, timeout: float) -> dict | None:
+        """Poll until the live box has stopped typing (see
+        `_SETTLED_BOX_STATES`). Returns that box, or None on timeout —
+        including when no box is open at all."""
+        deadline = time.monotonic() + timeout
+        while True:
+            msg = self._message() or {}
+            if msg.get("state") in _SETTLED_BOX_STATES:
                 return msg
             if time.monotonic() >= deadline:
                 return None
