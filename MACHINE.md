@@ -12,6 +12,13 @@ read them like any field; the load-time path check covers them); the
 event grammar grows the dispatchable `place` category; and the behavior
 interface gains the `traverse` leg primitive (see Leaves and behaviors).
 
+**Amended 2026-08-07 (ocarina 0.11.0, dojo docs/32 — boot identity;
+all four open calls ratified by AJ the same evening):** the save-file
+repo may declare its line in `identity.json` at the repo root; the
+RUNTIME judges every load and every attach against it, and a mismatch
+raises the one runtime-initiated wake (`identity`, hold default). See
+"The declared identity" below.
+
 **Clarification pass, 2026-08-01 (post-first-light):** six points where
 this file was silent and the built server had to choose were reviewed
 and ratified — AJ delegating the ruling to the mind as this surface's
@@ -36,6 +43,7 @@ transitions (`when`, below) — the docs/19 unification finishing its job.
 ## Layout
 
 ```
+identity.json           # OPTIONAL: the declared save-line identity (0.11.0)
 machine/                # in the save-file repo, NOT .claude/skills/
   machine.yaml          # the topology: nodes, transitions, initial
   behaviors/
@@ -47,6 +55,65 @@ One `machine.yaml`, not per-node files: the mind edits one document, git
 diffs show brain surgery in one hunk, `reload_machine()` has a single
 entry point. If it outgrows one file, an include mechanism is a cheap
 later addition — the server is the only consumer.
+
+## The declared identity (identity.json — 0.11.0, dojo docs/32)
+
+The tenth flight opened with an hour on the WRONG save file: the blind
+boot accepted whatever line the file-select cursor sat on, and no sense
+surfaced file identity. `identity.json`, hand-authored at the repo
+root, is what the repo says it is playing — bumped in the same commit
+as the flight that earned each claim.
+
+```json
+{
+  "save_slot": 1,                  // 0-based fileNum; the load event's own field
+  "save_name": "C",                // how the pack names the line
+  "fingerprint": {                 // MONOTONE facts only: what this line cannot lose
+    "health_capacity_at_least": 48,
+    "b_item": "kokiri_sword",
+    "c_buttons": {"c_left": "fairy_slingshot"},
+    "inventory_items": ["fairy_slingshot"],
+    "equipment_owned": {"sword": ["kokiri_sword"], "shield": ["deku_shield"]}
+  },
+  "journal_only": ["rupees", "nuts"],   // volatiles: READ every boot, asserted never
+  "_provenance": {"...": "date every claim to the flight that earned it"}
+}
+```
+
+Rules (all ratified with docs/32):
+
+- **Validated at `--repo` load**, alongside the machine: malformed
+  JSON, a missing `fingerprint` block, or a fingerprint key outside
+  the checkable vocabulary is named in a load diagnostic — and the
+  repo is then treated as opted-in-and-broken, which **fails closed**
+  (every attach refuses with CANNOT VERIFY until the file is fixed).
+  A declaration nobody checks is worse than none. `reload_machine()`
+  re-reads it (hand-editable, like the machine).
+- **The RUNTIME judges, not the machine**: on every `load_game` (the
+  slot rides the event's `file` field) and on every attach to an
+  already-loaded world — the rehydrate path no machine node covers,
+  where the slot is honestly unverifiable and the verdict says so. A
+  guard-language check would fail OPEN on a missing field (ABSENT
+  semantics); code can refuse on missing evidence, so it does:
+  missing wire blocks are CANNOT VERIFY, never a pass.
+- **Mismatch = the one runtime-initiated wake**: transition name
+  `identity`, freeze-confirmed like every wake, default
+  `hold refusing to play a line this repo does not declare`, detail
+  diffing expected against observed by name. Every other wake remains
+  machine-initiated; this one exists because attach-time verification
+  cannot be expressed machine-side.
+- **No declaration = the check is OFF, loudly**: one diagnostic at
+  load ("boot verification is OFF"), the `--o2r` pattern. The boot
+  line — B/C assignments, owned gear, inventory with ammo, hearts,
+  counters — is journaled on EVERY load regardless: the tenth
+  flight's tell sat unread for an hour because nothing put it in
+  front of anyone.
+- **The server never repairs**: no stick on the file select (a blind
+  cursor can reach Copy/Erase). It observes and refuses; choosing the
+  file stays a human act.
+- **The fingerprint is monotone or it is a bug**: consumables and worn
+  gear are volatile and belong in `journal_only` at most. `equips.worn`
+  is excluded on principle (docs/32 §4).
 
 ## machine.yaml grammar
 

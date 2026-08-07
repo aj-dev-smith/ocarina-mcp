@@ -1,10 +1,11 @@
 """Wake-delivery test driver (2026-08-07, the channel-registration find).
 
 Connects the ported fakegame to a LIVE ocarina server on 43384. The
-identity gate refuses its save (no slingshot, no shield vs lock.json)
-and fires a real WRONG SAVE FILE wake — freeze-confirmed, hold default,
-journaled. Harmless: the machine refuses to play and never leaves the
-identity gate.
+runtime's identity check (0.11.0, docs/32 — it replaced the machine-side
+gate this driver was first written against) refuses the fake save
+against the repo's identity.json and fires a real identity wake —
+freeze-confirmed, hold default, journaled. Harmless: the world parks
+frozen in the refusal; the machine never gets to play the fake line.
 
 Use it to verify channel delivery after starting the session with
     claude --dangerously-load-development-channels server:ocarina

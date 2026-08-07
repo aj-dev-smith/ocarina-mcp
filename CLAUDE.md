@@ -86,7 +86,7 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (306; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (322; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame, and
   real-o2r place-sense pins that skip if oot.o2r is absent).
 - Run: `python3 -m ocarina --repo <save-file-repo> --o2r
@@ -178,7 +178,49 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play (server at 0.10.0; the blocking wake LIVE)
+## State of play (server at 0.11.0; boot identity LIVE-VERIFIED)
+
+- **0.11.0 — BOOT IDENTITY (2026-08-07 evening, dojo docs/32:
+  designed, all four open calls ratified by AJ, and built in one
+  sitting — the same day as 0.10.0 and the tenth flight).** Backlog
+  #1 closed. The repo may declare its save line in **`identity.json`
+  at the repo root** (monotone-facts-only fingerprint — owned gear,
+  B/C assignments, inventory, heart-capacity floor; volatiles in
+  `journal_only`, read every boot and asserted never; provenance
+  dating every claim). The **RUNTIME judges** — not the machine — on
+  every `load_game` (the slot rides the event's `file` field, which
+  senses.py now presents on the `game_loaded` cue) AND on every
+  attach to an already-loaded world (the rehydrate gap the tenth
+  flight's wrong-file hour began under). Fail closed: broken
+  declaration, missing wire blocks, or a load event without `file`
+  all refuse — the mismatch is the bench's first RUNTIME-initiated
+  wake (transition `identity`, hold default, freeze-confirmed,
+  through the blocking verbs like any wake). No declaration = check
+  OFF with one loud diagnostic (the --o2r pattern). The boot line
+  (B/C, gear, inventory with ammo, hearts, counters) journals on
+  EVERY load unconditionally — the tenth flight's tell sat unread
+  for an hour. The 09-kokiri machine-side prototype (lock.json +
+  identity.py + gate nodes + root slot guard, exercised that morning
+  by fakewake) is RETIRED by AJ's ruling — one owner of the check —
+  its lock content promoted to that repo's identity.json. Contract
+  touch: both SURFACE.md and MACHINE.md amended per docs/32's
+  ratified calls. Backlog #2 re-statused with source evidence: the
+  equips.worn "nibble-order bug" theory is unsupported (SoH's own
+  enum/shifts/masks match equipment_view's decode); the live
+  null-rows sighting needs one read against a real game. Tests
+  306 → 322. **LIVE-VERIFIED the same evening, every path:** the
+  blind boot loaded the OLD line AGAIN (slot 0 — the tenth flight's
+  exact fraud, reproduced by accident) and was refused in ~1 second
+  (`loaded slot 0, declaration is slot 1 (C)` + four named diffs,
+  frozen, pack through the blocking verb); AJ hand-picked file C and
+  the journal answered `identity verified against identity.json
+  (save C, slot 1)`. The wrong-file hour is now a wrong-file second.
+  That live pass also CLOSED backlog #2: the old line's owned rows
+  read tunic/boots-only while file C's parse in full through the
+  same decode — the tenth flight's "null rows" were TRUTH about a
+  save genuinely missing its sword/shield owned bits (docs/29
+  corrected in harness-backlog), and equip()'s "not owned" refusal
+  was right all along.
 
 - **0.10.0 — THE BLOCKING WAKE (2026-08-07, dojo docs/31: designed,
   ratified, built by an Opus 5 agent, reviewed, and live-verified in
@@ -437,12 +479,15 @@ sixth flight ranked this list by felt pain, docs/26 has the reasoning;
 0.8.0 CLOSED the old #5 — dialogue text — and the save_game half of
 #4's compound interest):
 
-1. **Boot identity verification.** (Promoted after the tenth flight's
-   wrong-file hour; harness-backlog, tenth-flight wrap item 1.) The
-   old #1 — the heal loop — is OFF the backlog by AJ's ruling
-   (2026-08-07): a heal/retreat loop is a simple behavior for any run
-   to write, not harness work; ignore the stale "standing opener"
-   lines in the flight entries above.
+1. **Boot identity verification — CLOSED and LIVE-VERIFIED (0.11.0,
+   2026-08-07 evening, dojo docs/32).** identity.json + the runtime
+   check + the identity wake; the same evening the blind boot loaded
+   the wrong line AGAIN and was refused in a second, then file C
+   verified clean. (The old #1 — the
+   heal loop — is OFF the backlog by AJ's ruling (2026-08-07): a
+   heal/retreat loop is a simple behavior for any run to write, not
+   harness work; ignore the stale "standing opener" lines in the
+   flight entries above.)
 2. **Descent.** `traverse` rightly refuses climbing down, but the
    refusal left Link COMMITTED to the ring with no path back but
    falling — a one-way map is a trap the mind walks into knowingly.

@@ -187,7 +187,7 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: image block: actual pixels to the mind's vision, a debugging sense,
 #: never a stream. An old instrument answers "rebuild SoH", never a
 #: silent stub.
-OCARINA_VERSION = "0.10.0"
+OCARINA_VERSION = "0.11.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

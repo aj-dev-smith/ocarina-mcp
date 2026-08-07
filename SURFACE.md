@@ -21,6 +21,18 @@ from spec-only to built (the re-attach verb); the wake pack gains the
 interval digest; channels demote to an optional Claude Code transport.
 See "The wake" below.
 
+**Amended 2026-08-07 (ocarina 0.11.0): BOOT IDENTITY** — dojo docs/32,
+all four open calls ratified by AJ the same evening (the tenth
+flight's wrong-file hour is the evidence base). The save-file repo may
+declare its line in `identity.json` (schema and rules in MACHINE.md);
+the runtime journals the boot line on every load, judges every load
+and every attach against the declaration, and refuses a mismatch with
+the one runtime-initiated wake (`identity`, hold default, fail
+closed). A repo declaring nothing runs with the check OFF and one loud
+diagnostic. The `game_loaded` environment cue carries the game's own
+`file` (0-based fileNum) — presented since the post-tenth-flight fix;
+this amendment blesses it.
+
 ## The goal (AJ, verbatim in spirit)
 
 1. Enable inputs via the behavior machine.
@@ -221,7 +233,11 @@ Rules (ratified with docs/31):
 
 The skeleton wake set (shipped by navi, game-agnostic): health drop,
 novel actor, dialogue, stuck, heartbeat. Everything else the mind
-wires as it learns what matters.
+wires as it learns what matters. One wake is RUNTIME-initiated
+(0.11.0, the only one): the boot-identity refusal, transition
+`identity`, hold default — it exists because attach-time verification
+cannot be expressed machine-side (MACHINE.md, "The declared
+identity").
 
 **Channels (demoted 2026-08-07 to optional transport):** a Claude Code
 session started with `--dangerously-load-development-channels

@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from . import identity as identity_mod
 from . import overlay, senses
 from .events import EventLog
 from .executor import BehaviorExecutor
@@ -137,6 +138,18 @@ class MachineRuntime:
         self._dialogue_blind_warned = False
         self._dialogue_wide_warned = False
 
+        # The declared save-line identity (docs/32; 0.11.0). The check is
+        # RUNTIME-owned so it covers the rehydrate path no machine node
+        # can: verification belongs to ATTACHING to a world, not only to
+        # booting one. Loaded in load()/reload() alongside the machine.
+        self.identity: Optional[identity_mod.Identity] = None
+        self._identity_pending = False       # a load/attach awaits judgment
+        self._identity_pending_since = 0.0   # only judge snapshots newer
+        self._identity_slot: Optional[int] = None   # last load's `file`, this
+                                                    # connection; None = no load
+                                                    # seen (attach: unverifiable)
+        self._identity_slot_missing = False  # a load arrived WITHOUT `file`
+
         self._lock = threading.RLock()
         self._cooldowns: dict = {}      # transition name -> monotonic last-match
         self._edges: dict = {}          # when-transition name -> last value
@@ -189,12 +202,41 @@ class MachineRuntime:
         with self._lock:
             machine, diags = load_machine(self.repo)
             self.diagnostics = diags
+            self._load_identity()
             if machine is not None:
                 self.machine = machine
                 self._record({"event": "diagnostic",
                               "text": f"machine loaded ({machine.source_hash})"})
                 self._enter(machine.initial, reason="initial")
             return [d.as_dict() for d in diags]
+
+    def _load_identity(self) -> None:
+        """(Re)read the repo's declared save-line identity (docs/32).
+        Absent = the check is OFF, said once and loudly (the --o2r
+        pattern). Present-but-unusable = opted in and broken, which
+        FAILS CLOSED at the next attach, so the load-time diagnostic
+        names every problem while there is still time to fix the file."""
+        self.identity = identity_mod.load_identity(self.repo)
+        if self.identity is None:
+            self._record({"event": "diagnostic",
+                          "text": "this repo declares no save identity "
+                                  "(identity.json absent) — boot "
+                                  "verification is OFF"})
+        elif self.identity.broken:
+            self._record({"event": "diagnostic",
+                          "text": "identity.json is UNUSABLE — "
+                                  + "; ".join(self.identity.problems)
+                                  + " — boot verification will REFUSE to "
+                                    "pass any line until this is fixed "
+                                    "(fail closed)"})
+        else:
+            keys = [k for k in self.identity.fingerprint
+                    if not k.startswith("_")]
+            self._record({"event": "diagnostic",
+                          "text": f"save identity declared: "
+                                  f"{self.identity.label()}, fingerprint "
+                                  f"({', '.join(keys) or 'empty'}) — boot "
+                                  f"verification is ON"})
 
     def reload(self) -> dict:
         """Validate + hot-swap (MACHINE.md semantics): on failure the old
@@ -213,6 +255,8 @@ class MachineRuntime:
                 return result
 
             self.diagnostics = diags
+            self._load_identity()   # hand-editable, so the reload verb
+                                    # re-reads it with the machine
             old_current = self.current
             self.executor.preempt("machine reloaded")
             self.machine = machine
@@ -263,6 +307,7 @@ class MachineRuntime:
             self._fold_sightings()
             self._fold_place()
             self._fold_dialogue()
+            self._fold_identity()
             self._finish_behavior()
             self._push_overlay(now)
             if self._wake is not None:
@@ -317,6 +362,15 @@ class MachineRuntime:
         self._was_connected = connected
         self._record({"event": "diagnostic",
                       "text": "game connected" if connected else "game disconnected"})
+        # Every attach arms the identity check — the rehydrate gap
+        # (docs/32): a mid-flight reconnect never fires load_game, and
+        # the wrong-file hour began under exactly that blindness. No
+        # load seen this connection yet, so the slot half is honestly
+        # unverifiable until a game_loaded arrives.
+        self._identity_pending = connected
+        self._identity_pending_since = time.monotonic()
+        self._identity_slot = None
+        self._identity_slot_missing = False
         if connected:
             try:
                 self.game.events_on(frame_interval=0)   # real events only
@@ -344,6 +398,13 @@ class MachineRuntime:
             if not save_loaded and ev.get("event") != "load_game":
                 self.dropped_wire += 1
                 continue
+            if curated.get("cue") == "game_loaded":
+                # A fresh load re-arms the check: save&quit and load
+                # another file mid-connection must re-verify (docs/32).
+                self._identity_pending = True
+                self._identity_pending_since = time.monotonic()
+                self._identity_slot = curated.get("file")
+                self._identity_slot_missing = "file" not in curated
             self._record(curated)
             if self.executor.collecting:
                 # Success predicates were written against the raw wire
@@ -466,6 +527,84 @@ class MachineRuntime:
         """The recent-texts ring (newest last) for oot://dialogue."""
         with self._lock:
             return [dict(e) for e in self._dialogue_recent]
+
+    def _fold_identity(self) -> None:
+        """Judge the loaded save line against the repo's declaration
+        (docs/32; 0.11.0). Armed by every attach and every game_loaded;
+        waits across ticks for a post-arm snapshot with save_loaded
+        true, then journals the boot line UNCONDITIONALLY (the tenth
+        flight's tell sat unread for an hour because nothing put it in
+        front of anyone) and — if the repo opted in — verifies, failing
+        closed on a broken declaration or missing wire evidence. One
+        judgment per arm: a mismatch wake that gets resumed does not
+        re-fire until the next load or attach re-arms it."""
+        if not self._identity_pending:
+            return
+        if self._wake is not None:
+            return                       # judge after the wake resolves
+        st = self._last_state
+        if st is None or not st.get("save_loaded"):
+            return                       # still title/file-select; wait
+        if self._last_state_at < self._identity_pending_since:
+            return                       # pre-load snapshot; wait for fresh
+        self._identity_pending = False
+
+        facts, missing = identity_mod.observe(st)
+        line = identity_mod.presented(facts)
+        self._record({"event": "diagnostic", "text": line})
+
+        ident = self.identity
+        if ident is None:
+            return                       # check OFF (diagnosed at load)
+        if ident.broken:
+            self._identity_wake(
+                f"{line} :: CANNOT VERIFY — {ident.path.name} is unusable "
+                f"({'; '.join(ident.problems)}). An unverifiable boot is "
+                f"an unverified boot.")
+            return
+        if missing:
+            self._identity_wake(
+                f"{line} :: CANNOT VERIFY — the wire is missing "
+                + "; ".join(missing) + ". Absence of evidence is not a pass.")
+            return
+
+        diffs = identity_mod.judge(ident, facts)
+        slot_diff = identity_mod.judge_slot(ident, self._identity_slot)
+        if slot_diff is not None:
+            diffs.insert(0, slot_diff)
+        if self._identity_slot_missing and ident.save_slot is not None:
+            diffs.insert(0, "the load event carried no `file` field "
+                            "(instrument predates the slot sense) — the "
+                            "slot is unverifiable, and the declaration "
+                            "names one")
+        if diffs:
+            self._identity_wake(
+                f"WRONG SAVE FILE — {line} :: MISMATCH against "
+                f"{ident.label()} — " + "; ".join(diffs)
+                + ". This is not the line this repo declares; do not play it.")
+            return
+
+        note = ""
+        if ident.save_slot is not None and self._identity_slot is None:
+            note = (" (slot unverifiable this attach — no load event seen; "
+                    "fingerprint matched)")
+        self._record({"event": "diagnostic",
+                      "text": f"identity verified against {ident.label()}"
+                              f"{note}"})
+
+    def _identity_wake(self, reason: str) -> None:
+        """The first wake the runtime raises on its own authority
+        (docs/32 ratified call 3): same freeze-confirmed cycle, hold
+        default — a just-loaded world frozen at the entrance is the safe
+        place the seventh flight's health-critical hold was not. The
+        server never touches the file select; choosing the file stays a
+        human act, so the hold refuses rather than repairs."""
+        t = Transition(
+            name="identity", owner="RUNTIME", kind="event",
+            default=Action("hold", "refusing to play a line this repo "
+                                   "does not declare"))
+        self._begin_wake(t, reason,
+                         {"event": "identity_check", "initiator": "runtime"})
 
     def _finish_behavior(self) -> None:
         run = self.executor.finish()
