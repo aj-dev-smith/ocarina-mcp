@@ -3,7 +3,7 @@
 You are in the ocarina repo: the MCP server piece of OoT Bench.
 **`SURFACE.md` and `MACHINE.md` are BLESSED (AJ, 2026-08-01)** — the
 contract is in force, ratified-in-place clarifications included (see
-MACHINE.md's status block), and the server has flown **nine times**.
+MACHINE.md's status block), and the server has flown **ten times**.
 First light (0.1.0, 2026-08-01) proved the server flies: boot via a
 behavior, geometry-sense wandering, the channel wake path, a live
 hot-swap. Second light (0.2.x–0.3.0, same day) proved the **loop**:
@@ -43,7 +43,23 @@ FRESH save file the same day: treehouse → sword via the crawlspace →
 equipped → the trail → stopped at the Deku Tree's mouth as ordered —
 then, extended by AJ, INTO the tree and room 0 cleared (two babas,
 zero damage, deku_baba_v4 byte-identical to its dojo grading). Three
-game-native saves; no deaths. See the state of play below.
+game-native saves; no deaths. The tenth (2026-08-07, dojo docs/29,
+same file-C line): **the SLINGSHOT taken** — the 2F target open since
+the sixth flight's death. It opened with an hour on the WRONG save
+file (the blind boot body accepted the old line; caught by AJ's
+"CAN you check?" shield question — boot identity verification is now
+backlog #1 material), then ran file C clean: three babas, the ring
+chain, the bench's **first crouch-shield duel win** (the scrub's
+surrender box read live; its clue taught roll-landing), AJ's live
+commissions (the ACTION-BUTTON sense and the RUMBLE channel — a
+closed door read as mesh fins cost the mind twenty minutes AJ's eyes
+fixed in one sentence), the first traverse of a fresh vine leg, the
+chest, two saves. ITEM_NAMES grew (fairy_slingshot, kokiri_sword);
+`use_item` put the slingshot on C-LEFT. The return-and-shoot family
+(exit.py: pit-priced retries; shoot_guard_v1, Z-lock + C-LEFT — the
+sixth flight's killers finally in range) is authored but UNFLOWN —
+the standing next-session opener, ahead of even the heal loop.
+See the state of play below.
 Session records:
 `../oot-dojo/docs/20-first-light-2026-08-01.md`, `docs/21-second-light-
 2026-08-01.md`, `docs/22-sight-gating-2026-08-02.md` (design →
@@ -55,7 +71,10 @@ anything navigation-shaped), `docs/25-the-place-sense-2026-08-03.md`
 acceptance flight — read it before touching traverse; carries the
 Dungeon Map erratum), and `docs/27-dialogue-and-saving-2026-08-04.md`
 (0.8.0: designed, ratified, built, and acceptance-flown in one day —
-also the only written record of the seventh session's evidence).
+also the only written record of the seventh session's evidence), and
+`docs/29-tenth-flight-2026-08-07.md` (the slingshot flight: the
+wrong-file postmortem, the two AJ commissions, the honesty audit, and
+the unflown exit/shoot family — read it before the next session).
 
 **Read first:** `SURFACE.md` and `MACHINE.md`, then
 `../oot-dojo/docs/19-senses-and-the-machine-2026-07-31.md` (the substance)

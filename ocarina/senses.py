@@ -209,6 +209,8 @@ def actor_named(actor_id: int, params=None) -> bool:
 ITEM_NAMES = {
     0x00: "deku_stick",
     0x01: "deku_nut",
+    0x06: "fairy_slingshot",   # acquired 2026-08-07, tenth flight (ydan 2F chest)
+    0x3B: "kokiri_sword",      # the B button has shown it since the ninth flight
 }
 ITEM_IDS = {name: item_id for item_id, name in ITEM_NAMES.items()}
 ITEM_NONE = 0xFF
