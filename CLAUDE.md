@@ -378,13 +378,12 @@ sixth flight ranked this list by felt pain, docs/26 has the reasoning;
 0.8.0 CLOSED the old #5 — dialogue text — and the save_game half of
 #4's compound interest):
 
-1. **A HEAL LOOP — and the retreat REFLEX under it.** Recovery hearts
-   exist (baba kills, bushes) but no body can safely farm them at low
-   health — which is exactly when it matters. BOTH deaths are
-   downstream of this gap, and the second sharpened it: the
-   health-critical wake's `hold` default fired after ~5 min while the
-   mind deliberated. A freeze is not shelter; health-critical needs a
-   machine-side retreat reflex, not a hold. Next session opens here.
+1. **Boot identity verification.** (Promoted after the tenth flight's
+   wrong-file hour; harness-backlog, tenth-flight wrap item 1.) The
+   old #1 — the heal loop — is OFF the backlog by AJ's ruling
+   (2026-08-07): a heal/retreat loop is a simple behavior for any run
+   to write, not harness work; ignore the stale "standing opener"
+   lines in the flight entries above.
 2. **Descent.** `traverse` rightly refuses climbing down, but the
    refusal left Link COMMITTED to the ring with no path back but
    falling — a one-way map is a trap the mind walks into knowingly.
