@@ -138,19 +138,24 @@ silently-never-fires transition shape, twice).
   `oot://state` / `oot://events` and acts through the real tool surface.
   A `tail -f` on the repo's `journal/mechanical.jsonl` (filtering the
   `stand_watch` idle loop) is the live commentary channel.
-  **Wake delivery (proven by in-session experiment, 2026-08-07):** a
-  channel push does NOT start a turn in an idle session — it queues
-  until the next turn. A Monitor event line DOES re-invoke an idle
-  session. So arm exactly ONE Monitor at flight start as the alarm
-  clock (`persistent: true`):
+  **Wake delivery (settled by TWO in-session experiments, 2026-08-07):**
+  a channel push from the server neither starts a turn in an idle
+  session NOR renders on later turns — in the current Claude Code
+  build it is effectively not delivered at all (a real
+  identity-mismatch wake sat pushed and pending across an idle period
+  and a user turn; no block ever appeared). A Monitor event line DOES
+  re-invoke an idle session. So the JOURNAL is the delivery path: arm
+  exactly ONE Monitor at flight start as the doorbell
+  (`persistent: true`):
   `tail -F -n 0 <repo>/journal/mechanical.jsonl | grep --line-buffered
   '"event": "wake"\|"event": "escalation"'`
-  — one notification per wake record; the queued channel pack renders
-  in the turn the monitor starts. NEVER ad-hoc background tails: a
-  backgrounded `tail -f` never exits so never notifies (that is the
-  missed-frozen-game failure), and unfiltered tails wake on
-  stand_watch chatter (that is the spurious-wake storm). `-n 0` and
-  `--line-buffered` are both load-bearing.
+  — one notification per wake record; then read the wake from the
+  journal record / `oot://events` and answer with `resume()`. NEVER
+  ad-hoc background tails: a backgrounded `tail -f` never exits so
+  never notifies (that is the missed-frozen-game failure), and
+  unfiltered tails wake on stand_watch chatter (that is the
+  spurious-wake storm). `-n 0` and `--line-buffered` are both
+  load-bearing.
 - `tools/drive.py` is the hand-drive rig: spawns the server, does the
   MCP handshake, relays JSON commands from a FIFO, logs all traffic
   (wake packs included) to `traffic.jsonl`. It is how a Claude session
@@ -443,11 +448,13 @@ lint (deferred); dojo-trial `approach_baba_v1`/`v2`, `climb_ladder_v1`,
 the fifth-flight navgraph family, the sixth-flight place-flight family,
 and now the seventh-flight free-play family (all UNGRADED). The old
 "real idle-session channel delivery" question was ANSWERED 2026-08-07
-by in-session experiment: a channel push alone never starts an idle
-turn (it queues — this is why AJ had to type "wake" by hand), and a
-Monitor event line does re-invoke an idle session. The one-monitor
-flight convention is recorded in "Playing it directly" above; its
-first live-flight exercise is still pending.
+by two in-session experiments: a channel push is not delivered to a
+Claude Code session AT ALL in the current build (neither wakes idle
+nor renders on later turns — this is why AJ always had to type "wake"
+by hand; second light's round-trip was drive.py, a custom client),
+and a Monitor event line does re-invoke an idle session. The journal
+is the real delivery path; the one-monitor flight convention is in
+"Playing it directly" above. First live-flight exercise still pending.
 
 ## Rules for this repo
 
@@ -483,10 +490,15 @@ first live-flight exercise is still pending.
 7. **Wake transport is MCP channels** (freeze-confirmed first, then push;
    round-tripped live with a watching client as of second light — 3
    wakes, 0 freeze failures). A long-poll `await_wake` fallback exists
-   in the spec for non-Claude clients but is not built. Platform facts:
-   channels work over local stdio; delivery queues until idle; resources
-   cannot be subscribed to. Real idle-session delivery remains
-   unexercised (the rig listens; an idle Claude session hasn't).
+   in the spec for non-Claude clients but is not built. Platform facts
+   (corrected 2026-08-07 by experiment): channels work over local
+   stdio to a listening custom client (drive.py); the current Claude
+   Code build does NOT deliver them into the conversation (no idle
+   wake, no render on later turns) — the session-side doorbell is a
+   journal Monitor and the pack is read from the journal (see "Playing
+   it directly"); resources cannot be subscribed to. Keep the push:
+   it is correct MCP and a future host build may deliver it, but
+   nothing may depend on it.
 8. **Not-yet-built surface stays honest.** Tools/resources awaiting
    instrument work (dialogue text, menu navigation, screenshot) are
    registered and return explicit not-yet errors naming what they wait
