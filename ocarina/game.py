@@ -25,6 +25,7 @@ import threading
 import time
 from typing import Iterable, Optional
 
+from . import senses
 from .behavior import BehaviorPreempted
 from .link import GameLink, LinkError
 from .place import TraverseFailed, TraverseRefused
@@ -75,6 +76,14 @@ class Game:
 
     def state(self) -> dict:
         st = self.link.request({"type": "agent", "op": "state"})
+        # THE census normalization point — every snapshot passes here
+        # exactly once, before anything (hit counting, the runtime's
+        # observer, the digest, the overlay, this behavior) reads it. A
+        # degenerate distance pair is repaired from the positions the
+        # same snapshot carries; see senses.normalize_census_distances
+        # for the En_Hintnuts wire bug it works around (2026-08-07) and
+        # for when to delete it.
+        senses.normalize_census_distances(st)
         self._observe_hits(st)
         if self.state_observer is not None:
             self.state_observer(st)

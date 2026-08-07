@@ -1,7 +1,10 @@
 import unittest
 
 from ocarina import senses
+from ocarina.game import Game
 from ocarina.protocol import ACTORCAT_ENEMY
+
+from .stubgame import StubLink
 
 
 def enemy_actor(actor_id=0x0055, dist_xz=100.0, dist_y=0.0, health=2,
@@ -163,6 +166,108 @@ class TestSpawnNarration(SightedCase):
         ev = senses.translate({"event": "load_game"})
         self.assertEqual(ev["cue"], "game_loaded")
         self.assertNotIn("file", ev)
+
+
+def scrub_actor(pos, dist_xz=0.0, dist_y=0.0, key=5, **extra):
+    """An En_Hintnuts census entry as the wire actually sends it (tenth
+    flight, 2026-08-07): `pos` good, both distance fields zero."""
+    a = {"id": 0x0192, "cat": ACTORCAT_ENEMY, "health": 2, "sighted": True,
+         "key": key, "pos": list(pos) if pos is not None else None,
+         "dist_xz": dist_xz, "dist_y": dist_y}
+    if pos is None:
+        del a["pos"]
+    a.update(extra)
+    return a
+
+
+class TestDegenerateCensusDistances(SightedCase):
+    """The En_Hintnuts wire bug (harness-backlog tenth-flight item 3):
+    dist_xz == 0 and dist_y == 0 while `pos` is good, so a scrub across
+    the room reads as standing on Link. Hardened by deriving the pair
+    from the positions the same snapshot already carries — applied ONCE,
+    where Game.state() first reads the census, so the digest, the
+    overlay, and behaviors can never disagree about a distance."""
+
+    def link_with(self, *actors, player_pos=(0.0, 0.0, 0.0)):
+        link = StubLink()
+        if player_pos is None:
+            link.world["player"] = {"yaw": 0, "state_flags1": 0,
+                                    "state_flags2": 0}
+        else:
+            link.world["player"]["pos"] = list(player_pos)
+        link.world["actors"] = list(actors)
+        return link
+
+    def test_degenerate_distance_is_derived_by_the_time_the_digest_reads_it(self):
+        # THE BUG, end to end: 300 units away on the wire's own positions,
+        # 0/0 in the distance fields. Pre-fix this digest says dist 0.0.
+        st = Game(self.link_with(scrub_actor([0.0, 0.0, 300.0]))).state()
+        enemy = self.digest(st)["nearest_enemy"]
+        self.assertAlmostEqual(enemy["dist"], 300.0, places=3)
+
+    def test_derived_dist_y_keeps_the_wire_sign_convention(self):
+        """The wire's dist_y is player.y - actor.y (Actor_HeightDiff):
+        NEGATIVE when the actor is above Link, which the digest negates
+        into `above`. A derived value with the opposite sign would put
+        every repaired actor on the wrong side of Link's head — docs/08
+        §17, the field this repo has been burned on before. Pinned in
+        BOTH directions, on the raw field and on the digest's `above`."""
+        # Actor 100 units OVERHEAD: wire convention is dist_y = -100.
+        overhead = scrub_actor([0.0, 100.0, 300.0], key=1)
+        senses.normalize_census_distances(
+            {"player": {"pos": [0.0, 0.0, 0.0]}, "actors": [overhead]})
+        self.assertAlmostEqual(overhead["dist_y"], -100.0, places=3)
+
+        # Actor 100 units BELOW: wire convention is dist_y = +100.
+        below = scrub_actor([0.0, -100.0, 300.0], key=2)
+        senses.normalize_census_distances(
+            {"player": {"pos": [0.0, 0.0, 0.0]}, "actors": [below]})
+        self.assertAlmostEqual(below["dist_y"], 100.0, places=3)
+
+        # And the same two through the digest's `above` (positive = up).
+        st = Game(self.link_with(scrub_actor([0.0, 100.0, 300.0]))).state()
+        self.assertAlmostEqual(self.digest(st)["nearest_enemy"]["above"],
+                               100.0, places=3)
+
+    def test_an_actor_truly_at_link_stays_zero(self):
+        # 0/0 with coincident positions is the TRUTH, not the bug — a
+        # "repair" here would be inventing a distance out of noise.
+        at_link = scrub_actor([0.0, 0.0, 0.0])
+        st = Game(self.link_with(at_link)).state()
+        self.assertEqual(st["actors"][0]["dist_xz"], 0.0)
+        self.assertEqual(st["actors"][0]["dist_y"], 0.0)
+        self.assertEqual(self.digest(st)["nearest_enemy"]["dist"], 0.0)
+
+    def test_an_entry_without_a_position_is_left_alone(self):
+        # Nothing to derive from: leave it exactly as it came (never guess).
+        st = Game(self.link_with(scrub_actor(None))).state()
+        self.assertEqual(st["actors"][0]["dist_xz"], 0.0)
+        self.assertNotIn("pos", st["actors"][0])
+
+    def test_a_snapshot_without_a_player_position_is_left_alone(self):
+        st = Game(self.link_with(scrub_actor([0.0, 0.0, 300.0]),
+                                 player_pos=None)).state()
+        self.assertEqual(st["actors"][0]["dist_xz"], 0.0)
+
+    def test_healthy_distances_are_never_rewritten(self):
+        # The repair must be invisible on a working wire: a good entry
+        # keeps the game's own numbers, projection quirks included.
+        good = scrub_actor([0.0, 0.0, 300.0], dist_xz=250.0, dist_y=-40.0)
+        st = Game(self.link_with(good)).state()
+        self.assertEqual(st["actors"][0]["dist_xz"], 250.0)
+        self.assertEqual(st["actors"][0]["dist_y"], -40.0)
+
+    def test_only_the_degenerate_entries_move(self):
+        # Whole-census immunity, one entry at a time: the bugged scrub is
+        # repaired, the baba beside it is untouched.
+        bugged = scrub_actor([0.0, 0.0, 400.0], key=1)
+        fine = scrub_actor([0.0, 0.0, 100.0], dist_xz=100.0, key=2)
+        st = Game(self.link_with(bugged, fine)).state()
+        self.assertAlmostEqual(st["actors"][0]["dist_xz"], 400.0, places=3)
+        self.assertEqual(st["actors"][1]["dist_xz"], 100.0)
+        # ...and the slot goes to the genuinely nearer one, which is the
+        # whole point: pre-fix the scrub's phantom 0 stole the slot.
+        self.assertEqual(self.digest(st)["nearest_enemy"]["dist"], 100.0)
 
 
 class TestInstrumentHonesty(unittest.TestCase):

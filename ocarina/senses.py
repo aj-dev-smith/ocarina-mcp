@@ -56,6 +56,11 @@ Known honesty gaps, flagged rather than hidden:
   the params curated in ITEM00_NAMES; anything else narrates as
   `dropped_item` — a real thing seen, not identified. The raw param is
   never presented: a number is not something a player saw.
+- Census distance fields are REPAIRED when the wire sends them
+  degenerate (both zero while the positions disagree) — see
+  `normalize_census_distances`. That is an ocarina-side workaround for a
+  wire bug, not a sense; it derives nothing the snapshot didn't already
+  carry, and it is written to be deleted when the wire is fixed.
 - The 0.9.0 vocabulary pass (Kokiri route) named twelve actors from the
   id table AHEAD of eyewitness confirmation, which is the 0.3.0 order of
   operations (name, then have AJ look) but leaves a window where a name
@@ -66,6 +71,7 @@ Known honesty gaps, flagged rather than hidden:
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from .place import clock_bearing
@@ -459,6 +465,69 @@ def census_truncated(state: dict):
     if actors is None or total is None:
         return None
     return (len(actors), total) if total > len(actors) else None
+
+
+#: How far apart the two positions must be before a zeroed distance pair
+#: reads as the wire bug rather than the truth. One unit is far inside
+#: Link's own body radius: nothing genuinely at his feet clears it, and
+#: nothing the bug produces is ever that close.
+DEGENERATE_DIST_EPSILON = 1.0
+
+
+def normalize_census_distances(state: dict) -> dict:
+    """Repair census entries whose wire distances are degenerate, deriving
+    dist_xz/dist_y from the positions the same snapshot already carries.
+
+    WORKAROUND FOR A WIRE BUG, 2026-08-07 (tenth flight; harness-backlog
+    tenth-flight item 3): En_Hintnuts (0x0192) census entries arrive with
+    `dist_xz == 0` and `dist_y == 0` while `pos` is good, so a scrub
+    across the room reads as standing on Link — and, worse, wins the
+    single `nearest_enemy` slot from whatever is genuinely nearest. The
+    cause is wire-side and the game must diagnose it. This immunizes the
+    WHOLE census against the class rather than the one actor id, because
+    the flight bodies' hand-rolled pos arithmetic proves the class is
+    what hurts. DELETE THIS FUNCTION when the wire is fixed.
+
+    Derivation, not invention: the positions are already on the wire and
+    are exactly what the distance fields are supposed to be computed
+    from. Nothing moves unless BOTH distance fields are zero AND the two
+    positions are materially apart (DEGENERATE_DIST_EPSILON) — an actor
+    truly at Link's feet reports 0/0 honestly, and "correcting" that
+    would be manufacturing a distance from float noise. An entry with no
+    `pos`, or a snapshot with no player pos, is left exactly as it came:
+    never guess.
+
+    Mutates and returns `state`. It is applied ONCE, where the snapshot
+    is first read (Game.state()), so behaviors, the digest, and the debug
+    overlay all share one repaired census and cannot disagree about how
+    far away a thing is — the overlay's whole value is that it renders
+    the beliefs the narration holds.
+    """
+    ppos = (state.get("player") or {}).get("pos")
+    if not ppos or len(ppos) < 3:
+        return state
+    px, py, pz = float(ppos[0]), float(ppos[1]), float(ppos[2])
+    for a in state.get("actors") or []:
+        if float(a.get("dist_xz") or 0.0) or float(a.get("dist_y") or 0.0):
+            continue
+        apos = a.get("pos")
+        if not apos or len(apos) < 3:
+            continue
+        ax, ay, az = float(apos[0]), float(apos[1]), float(apos[2])
+        dist_xz = math.hypot(ax - px, az - pz)
+        # SIGN: the wire's dist_y is yDistToPlayer = player.y - actor.y
+        # (Actor_HeightDiff, z_actor.c:1397) — NEGATIVE when the actor is
+        # ABOVE Link, which is why digest() negates it into `above`. The
+        # derived value must carry the identical convention; the opposite
+        # sign would silently put every repaired actor on the wrong side
+        # of Link's head. docs/08 §17, the field that has already caught
+        # this repo twice.
+        dist_y = py - ay
+        if math.hypot(dist_xz, dist_y) <= DEGENERATE_DIST_EPSILON:
+            continue                    # genuinely at Link: 0/0 is true
+        a["dist_xz"] = dist_xz
+        a["dist_y"] = dist_y
+    return state
 
 
 def in_view_enemies(state: dict, sightings: Sightings) -> list:
