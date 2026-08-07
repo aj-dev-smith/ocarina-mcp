@@ -138,14 +138,19 @@ silently-never-fires transition shape, twice).
   `oot://state` / `oot://events` and acts through the real tool surface.
   A `tail -f` on the repo's `journal/mechanical.jsonl` (filtering the
   `stand_watch` idle loop) is the live commentary channel.
-  **Wake delivery (settled by TWO in-session experiments, 2026-08-07):**
-  a channel push from the server neither starts a turn in an idle
-  session NOR renders on later turns — in the current Claude Code
-  build it is effectively not delivered at all (a real
-  identity-mismatch wake sat pushed and pending across an idle period
-  and a user turn; no block ever appeared). A Monitor event line DOES
-  re-invoke an idle session. So the JOURNAL is the delivery path: arm
-  exactly ONE Monitor at flight start as the doorbell
+  **Wake delivery (settled 2026-08-07: two experiments + the channels
+  reference):** a plain `claude mcp add` registration does NOT deliver
+  channel events — Claude Code silently drops them unless the session
+  loads the server AS A CHANNEL (research-preview allowlist; the
+  documented behavior our fakegame experiment observed: a real
+  identity-mismatch wake pushed, pending, and never rendered). The
+  fix is to start the session with
+  `claude --dangerously-load-development-channels server:ocarina`,
+  after which channel events inject directly and start turns — VERIFY
+  on first use (run the fakegame driver, watch the wake arrive
+  unprompted). Until that's verified, the proven fallback is the
+  journal doorbell: a Monitor event line re-invokes an idle session,
+  so arm exactly ONE Monitor at flight start
   (`persistent: true`):
   `tail -F -n 0 <repo>/journal/mechanical.jsonl | grep --line-buffered
   '"event": "wake"\|"event": "escalation"'`
@@ -448,13 +453,16 @@ lint (deferred); dojo-trial `approach_baba_v1`/`v2`, `climb_ladder_v1`,
 the fifth-flight navgraph family, the sixth-flight place-flight family,
 and now the seventh-flight free-play family (all UNGRADED). The old
 "real idle-session channel delivery" question was ANSWERED 2026-08-07
-by two in-session experiments: a channel push is not delivered to a
-Claude Code session AT ALL in the current build (neither wakes idle
-nor renders on later turns — this is why AJ always had to type "wake"
-by hand; second light's round-trip was drive.py, a custom client),
-and a Monitor event line does re-invoke an idle session. The journal
-is the real delivery path; the one-monitor flight convention is in
-"Playing it directly" above. First live-flight exercise still pending.
+(two experiments + the channels reference doc): every flight had
+registered ocarina with plain `claude mcp add`, which never loads it
+as a CHANNEL, so its pushes were silently dropped by documented
+research-preview behavior — that is the whole mystery of AJ typing
+"wake" by hand (second light's round-trip was drive.py, a custom
+client, which is why it worked). Properly loaded
+(`--dangerously-load-development-channels server:ocarina`), channel
+events inject and start turns; first live verification pending. The
+Monitor doorbell (proven to wake an idle session) is the fallback;
+see "Playing it directly".
 
 ## Rules for this repo
 
@@ -491,14 +499,20 @@ is the real delivery path; the one-monitor flight convention is in
    round-tripped live with a watching client as of second light — 3
    wakes, 0 freeze failures). A long-poll `await_wake` fallback exists
    in the spec for non-Claude clients but is not built. Platform facts
-   (corrected 2026-08-07 by experiment): channels work over local
-   stdio to a listening custom client (drive.py); the current Claude
-   Code build does NOT deliver them into the conversation (no idle
-   wake, no render on later turns) — the session-side doorbell is a
-   journal Monitor and the pack is read from the journal (see "Playing
-   it directly"); resources cannot be subscribed to. Keep the push:
-   it is correct MCP and a future host build may deliver it, but
-   nothing may depend on it.
+   (corrected TWICE on 2026-08-07 — experiment, then the channels
+   reference doc): channel delivery requires the session to load the
+   server AS A CHANNEL. Channels are a research preview with an
+   allowlist; a server registered with plain `claude mcp add` gets its
+   `notifications/claude/channel` events SILENTLY DROPPED (documented
+   behavior — this is why every flight's wakes went nowhere and AJ
+   typed "wake" by hand). Loaded properly, channel events inject
+   directly into the session and START TURNS (AJ's daily Telegram
+   channel is the precedent). For ocarina that means starting the
+   session with
+   `claude --dangerously-load-development-channels server:ocarina`.
+   First live verification of that flag is pending; until it passes,
+   the journal-Monitor doorbell in "Playing it directly" is the
+   proven fallback. Resources cannot be subscribed to.
 8. **Not-yet-built surface stays honest.** Tools/resources awaiting
    instrument work (dialogue text, menu navigation, screenshot) are
    registered and return explicit not-yet errors naming what they wait
