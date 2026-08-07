@@ -106,6 +106,26 @@ def terrain_ladder_mesh() -> CollisionMesh:
     return mesh
 
 
+def atrium_web_mesh() -> CollisionMesh:
+    """A high ledge and a deep pit floor ~900 units below it, side by side
+    in XZ — the Deku Tree atrium in miniature. The floor WEB Link stands
+    on is an actor, so it is not in this mesh at all: walking laterally
+    off the ledge's XZ footprint drops the LOCATED floor 900 units while
+    Link himself never moves down (the ninth flight's six false `fell`
+    narrations, dojo docs/28)."""
+    verts = [
+        (0, 900, 0), (200, 900, 0), (200, 900, 200), (0, 900, 200),  # 0-3 ledge
+        (200, 0, 0), (600, 0, 0), (600, 0, 200), (200, 0, 200),      # 4-7 pit
+    ]
+    mesh = CollisionMesh(min_bounds=(0, 0, 0), max_bounds=(600, 900, 200))
+    mesh.vertices = verts
+    mesh.surface_types = [SurfaceType(data0=0, data1=0)]
+    for i, t in enumerate([(0, 1, 2), (0, 2, 3), (4, 5, 6), (4, 6, 7)]):
+        mesh.polys.append(Poly(index=i, type=0, va=t[0], vb=t[1], vc=t[2],
+                               normal=FLOOR_N, dist=0))
+    return mesh
+
+
 LOWER = "test:r@150,0,100"
 UPPER = "test:r@100,200,300"
 VINE = "test:vine@100,0,200"
@@ -291,6 +311,17 @@ class TestPlaceSense(unittest.TestCase):
         evs = self.ps.fold(state_at(150, 2, 100))
         self.assertNotIn("fell", [e["cue"] for e in evs])
         self.ps.end_leg()
+
+    def test_standing_on_an_actor_surface_is_not_falling(self):
+        # The atrium floor web: Link's own y never changes, but lateral
+        # movement re-localizes him onto the mesh floor 900 units below.
+        # A fall that did not move Link DOWN is not a fall.
+        ps = PlaceSense("/nonexistent/dummy.o2r")
+        ps._graphs[0] = PlaceGraph("test", distill(atrium_web_mesh()))
+        ps.fold(state_at(100, 900, 100))                 # on the ledge
+        evs = ps.fold(state_at(400, 900, 100))           # over the pit, same y
+        self.assertNotIn("fell", [e["cue"] for e in evs],
+                         "the located floor dropped 900; Link did not move")
 
     def test_stepping_down_is_not_falling(self):
         # A drop under FELL_MIN_DROP must not narrate. (Same region here

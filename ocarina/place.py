@@ -40,10 +40,19 @@ Honesty gaps, flagged rather than hidden (the senses.py discipline):
   player's room id yet). This sense currently OVER-reveals topology and
   says so — loud here and in the backlog, with the follow-up named:
   `room` on the wire, region->room partition, gate the document.
-- Localization is XZ point-in-poly with a foot tolerance: Link mid-air
-  over a lower floor localizes to that floor. `on_mesh` is honest about
-  "no floor below at all" (the void, unmapped space), not about
-  airborne-over-floor.
+- Localization is XZ point-in-poly with a foot tolerance over the
+  COLLISION MESH ONLY — actor surfaces (the Deku Tree atrium's floor
+  web, pushblocks, platforms) are not in it. So Link standing on one
+  localizes to whatever mesh floor lies below, and a lateral step can
+  swing that answer hundreds of units down. `region` and `on_mesh` are
+  still reported from that fix; only `fell` is guarded, by requiring
+  Link's OWN y to have dropped too (the ninth flight narrated six falls
+  Link never took — docs/28). Unchanged and unguarded: mid-air
+  localization (Link over a lower floor reads as being on it), and
+  `on_mesh` remains honest about "no floor below at all" (the void,
+  unmapped space), not about airborne-or-actor-borne-over-floor. The
+  real fix is consulting the census for the surface Link is standing
+  on; that is a design item, not a patch.
 - `fell` is suppressed while a traverse leg is declared — the primitive
   verifies its own arrival and its failure is the louder story.
 """
@@ -338,7 +347,8 @@ class PlaceSense:
         self._entries: Optional[dict] = None   # scene dir -> o2r entry name
         self._diags: list = []
         self._warned: set = set()        # one-shot diagnostic keys
-        self._prev = None                # (scene, rid, floor_y) last ON-MESH fix
+        self._prev = None                # (scene, rid, floor_y, on_wall, y)
+                                         # — the last ON-MESH fix
         self._prev_region_narrated = None
         self._leg = None                 # declared traverse leg (edge name)
 
@@ -480,15 +490,21 @@ class PlaceSense:
                 events.append({"event": "place", "cue": "region_entered",
                                "region": full,
                                "desc": judge_size(region["area"])})
+            # A fall moves LINK down, not just the floor under him. The
+            # located floor dropping is necessary but not sufficient: on
+            # an actor surface (the atrium's floor web) a lateral step
+            # re-localizes to the mesh floor far below while Link stands
+            # still — six false narrations on the ninth flight (docs/28).
             if (prev is not None and prev[0] == scene and prev[1] != rid
                     and floor_y < prev[2] - FELL_MIN_DROP
+                    and y < prev[4] - FELL_MIN_DROP
                     and not on_wall and not prev[3]
                     and leg is None):
                 events.append({"event": "place", "cue": "fell",
                                "region": full,
                                "drop": round(prev[2] - floor_y, 1),
                                "desc": f"dropped {judge_height(prev[2] - floor_y)}"})
-            self._prev = (scene, rid, floor_y, on_wall)
+            self._prev = (scene, rid, floor_y, on_wall, y)
         return events
 
     # -- traverse support -------------------------------------------------------
