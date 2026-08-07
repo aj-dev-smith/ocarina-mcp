@@ -3,3 +3,5 @@ __pycache__/
 .DS_Store
 venv/
 .venv/
+lab/navgraph/*_navgraph.json
+lab/navgraph/*_viewer.html

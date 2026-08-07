@@ -9,8 +9,8 @@ of **OoT Bench**:
 | piece | role |
 |---|---|
 | **ocarina** (this repo) | the instrument — the only way the agent touches the game |
-| **navi** | a Claude Code plugin that teaches an agent to play through ocarina |
-| **save files** | playthrough repos — one per attempt, where skills and knowledge accumulate across plays |
+| **soh-agentlink** | a small instrument patched into Ship of Harkinian that puts the game's senses on the wire |
+| **save files** | playthrough repos — one per attempt, where behaviors and knowledge accumulate across plays |
 
 ## The one design principle
 
@@ -34,21 +34,30 @@ machine's on-disk format).
 
 ## Status
 
-**Contract blessed (2026-08-01); server under construction.** `SURFACE.md`
-and `MACHINE.md` are the blessed contract; ocarina 0.x implements it —
+**Contract blessed (2026-08-01); nine live flights flown.** `SURFACE.md`
+and `MACHINE.md` are the blessed contract; ocarina 0.9 implements it —
 the machine loader/validator, guard language, 20 Hz executor with
-preemption, freeze-confirmed wake cycle, and stdio MCP surface are built
-and tested offline (`python3 -m unittest discover -s tests -t .`).
-Tools/resources that wait on instrument work (dialogue text, pause-menu
-navigation, screenshot) are registered and return honest
-not-yet-implemented errors. The design record and the validated internals
-these modules were ported from live in the OoT Bench workshop repo
-(`oot-dojo`).
+preemption, freeze-confirmed wake cycle, the sight-gated sensorium, the
+place sense (a region graph distilled from the game's own collision
+data), dialogue text, game-native saving, shopping, and the stdio MCP
+surface, all tested (`python3 -m unittest discover -s tests -t .`).
+The latest flight started a fresh save file and played treehouse →
+sword → shield → into the Deku Tree in ~2.5 hours. Tools that still
+wait on instrument work (screenshot, full menu navigation) return
+honest not-yet-implemented errors.
 
-Run it: `python3 -m ocarina --repo <save-file-repo>` (the repo declares
-the machine under `machine/`; the game connects in over Sail).
-`examples/first-light/` is a working save-file repo — the one that flew
-the first live session.
+Run it:
 
-License: TBD — open-sourcing the layers is the plan once the foundation is
-in place.
+    python3 -m ocarina --repo <save-file-repo> --o2r <path to oot.o2r>
+
+The save-file repo declares the machine under `machine/`; the game
+connects in over Sail (build Ship of Harkinian with the
+**soh-agentlink** patches — see that repo for setup). `--o2r` points at
+your own legally-dumped game archive, the same file SoH itself
+requires; without it the place sense is off, loudly. No game assets or
+data derived from them ship in this repo — the lab pipeline
+(`lab/navgraph/`) regenerates its artifacts from your o2r. `examples/`
+contains real flight repos, journals included — `examples/ninth-flight/`
+is the fresh-file run.
+
+License: MIT.
