@@ -138,6 +138,19 @@ silently-never-fires transition shape, twice).
   `oot://state` / `oot://events` and acts through the real tool surface.
   A `tail -f` on the repo's `journal/mechanical.jsonl` (filtering the
   `stand_watch` idle loop) is the live commentary channel.
+  **Wake delivery (proven by in-session experiment, 2026-08-07):** a
+  channel push does NOT start a turn in an idle session — it queues
+  until the next turn. A Monitor event line DOES re-invoke an idle
+  session. So arm exactly ONE Monitor at flight start as the alarm
+  clock (`persistent: true`):
+  `tail -F -n 0 <repo>/journal/mechanical.jsonl | grep --line-buffered
+  '"event": "wake"\|"event": "escalation"'`
+  — one notification per wake record; the queued channel pack renders
+  in the turn the monitor starts. NEVER ad-hoc background tails: a
+  backgrounded `tail -f` never exits so never notifies (that is the
+  missed-frozen-game failure), and unfiltered tails wake on
+  stand_watch chatter (that is the spurious-wake storm). `-n 0` and
+  `--line-buffered` are both load-bearing.
 - `tools/drive.py` is the hand-drive rig: spawns the server, does the
   MCP handshake, relays JSON commands from a FIFO, logs all traffic
   (wake packs included) to `traffic.jsonl`. It is how a Claude session
@@ -428,10 +441,13 @@ nearest-enemy-at-freeze is the documented workaround); Object_Kankyo
 filter; En_Item00 param-aware naming; the absence-semantics foot-gun
 lint (deferred); dojo-trial `approach_baba_v1`/`v2`, `climb_ladder_v1`,
 the fifth-flight navgraph family, the sixth-flight place-flight family,
-and now the seventh-flight free-play family (all UNGRADED). Still
-unexercised: **real idle-session channel delivery** — flights four
-through eight drove synchronously and read wakes from the journal, so a
-wake pack has still never woken an idle Claude session on its own.
+and now the seventh-flight free-play family (all UNGRADED). The old
+"real idle-session channel delivery" question was ANSWERED 2026-08-07
+by in-session experiment: a channel push alone never starts an idle
+turn (it queues — this is why AJ had to type "wake" by hand), and a
+Monitor event line does re-invoke an idle session. The one-monitor
+flight convention is recorded in "Playing it directly" above; its
+first live-flight exercise is still pending.
 
 ## Rules for this repo
 
