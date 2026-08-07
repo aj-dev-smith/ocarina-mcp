@@ -216,6 +216,88 @@ class TestWakes(RuntimeCase):
         self.assertEqual(len(self.packs), 1, "second sighting is not novel")
 
 
+class TestAbortOwnership(RuntimeCase):
+    """A preempted body raises a tick or more AFTER the node it belonged
+    to was left, so its behavior_aborted can arrive with a SUCCESSOR node
+    current (harness-backlog Runtime #10; 4 field sightings)."""
+
+    MACHINE = """\
+        version: 1
+        initial: work
+        nodes:
+          work:
+            behavior: linger_v1
+            transitions:
+              - name: work-aborted
+                on: behavior_aborted
+                do: wake work aborted: {detail}
+                default: hold stay put
+              - name: work-done
+                on: behavior_done
+                do: goto work
+          park:
+            behavior: linger_v1
+            transitions:
+              - name: park-aborted
+                on: behavior_aborted
+                do: wake park saw an abort: {detail}
+                default: hold stay put
+              - name: park-done
+                on: behavior_done
+                do: goto park
+        """
+    BEHAVIOR = """\
+        from ocarina.behavior import Behavior
+        BEHAVIORS = {"linger_v1": Behavior(
+            name="linger", version=1, description="hold still, be preempted",
+            body=lambda game, ctx: game.wait(30.0),
+            success=lambda game, initial, events: True, timeout_s=60.0)}
+        """
+
+    def setUp(self):
+        super().setUp()
+        import textwrap
+        (self.repo / "machine" / "machine.yaml").write_text(
+            textwrap.dedent(self.MACHINE))
+        (self.repo / "machine" / "behaviors" / "linger.py").write_text(
+            textwrap.dedent(self.BEHAVIOR))
+        self.assertTrue(self.runtime.reload()["ok"])
+        self.tick_until(lambda: self.runtime.executor.active_behavior == "linger_v1",
+                        msg="the body is running")
+
+    def aborts(self):
+        return self.events("behavior_aborted")
+
+    def test_stale_abort_is_journaled_not_dispatched(self):
+        self.runtime.force_state("park")
+        self.assertEqual(self.runtime.current, "park")
+        self.tick_until(self.aborts, msg="the old body's abort lands")
+        aborted = self.aborts()[0]
+        self.assertEqual(aborted["behavior"], "linger_v1")
+        self.assertIn("force_state", aborted["reason"])
+        # The successor's transitions did not cause this abort.
+        self.assertEqual(self.packs, [], "the successor node saw a stale abort")
+        self.assertEqual(self.runtime.current, "park")
+        self.assertFalse(self.runtime.status()["frozen"])
+
+    def test_abort_on_the_owning_node_still_dispatches_with_detail(self):
+        # Preempted while the machine stays put (the wake path's shape):
+        # this abort IS the owning node's business.
+        self.runtime.executor.preempt("a passing thought")
+        self.tick_until(lambda: self.packs, msg="work's own abort transition fired")
+        pack = self.packs[0]
+        self.assertEqual(pack["transition"], "work-aborted")
+        self.assertIn("a passing thought", pack["reason"])
+        self.assertNotIn("{", pack["reason"], "the {detail} template never resolved")
+
+    def test_recorded_abort_carries_detail(self):
+        self.runtime.executor.preempt("a passing thought")
+        self.tick_until(self.aborts, msg="abort recorded")
+        aborted = self.aborts()[0]
+        self.assertIn("a passing thought", aborted["detail"])
+        self.assertNotIn("{", aborted["detail"])
+
+
 class TestReload(RuntimeCase):
     def test_reload_carries_node_by_name(self):
         yaml_path = self.repo / "machine" / "machine.yaml"

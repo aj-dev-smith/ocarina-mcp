@@ -14,7 +14,10 @@ Machine events recorded here but deliberately NOT dispatched to
 transitions: `entered`/`exited`/`wake`/`journal`/`diagnostic` — a
 transition on `entered` firing a goto that emits `entered` is an infinite
 loop inside one tick. `behavior_done` and `behavior_aborted` ARE
-dispatched; that is how loops and completion handling work (MACHINE.md).
+dispatched; that is how loops and completion handling work (MACHINE.md)
+— with one ownership rule: an abort caused by LEAVING a node is
+journaled but not dispatched, because by the time the body notices, the
+machine is somewhere else and that successor never caused it.
 """
 
 from __future__ import annotations
@@ -113,6 +116,8 @@ class MachineRuntime:
         self._warned: set = set()       # (transition, warning) journaled once
         self._wake: Optional[_PendingWake] = None
         self._pending_start = False     # start current leaf's behavior when free
+        self._behavior_node: Optional[str] = None   # the leaf the running body
+                                                    # belongs to (see _finish_behavior)
         self._last_state: Optional[dict] = None
         self._last_state_at = 0.0
         self.overlay_enabled = True     # human debug labels; see overlay.py
@@ -424,12 +429,26 @@ class MachineRuntime:
         run = self.executor.finish()
         if run is None:
             return
+        owner, self._behavior_node = self._behavior_node, None
         if run.preempted_by is not None:
-            self._record({"event": "behavior_aborted", "behavior": run.behavior,
-                          "reason": run.preempted_by,
-                          "duration_s": round(run.duration_s, 1)})
-            self._dispatch({"event": "behavior_aborted", "behavior": run.behavior,
-                            "reason": run.preempted_by})
+            ev = {"event": "behavior_aborted", "behavior": run.behavior,
+                  "reason": run.preempted_by, "detail": run.detail,
+                  "duration_s": round(run.duration_s, 1)}
+            self._record(ev)
+            # A preempted body raises at its NEXT game.* call, a tick or
+            # more after the node it belonged to was left — so this abort
+            # can arrive with a successor node current. The successor did
+            # not cause it and its transitions must not see it: the abort
+            # is the leaving, already handled by whatever did the leaving.
+            # Journaled either way; blame stays attached to the owner.
+            if owner is not None and owner != self.current:
+                self._record({"event": "diagnostic",
+                              "text": f"behavior_aborted [{run.behavior}] not "
+                                      f"dispatched: it belonged to node {owner!r}, "
+                                      f"left before the body noticed; the machine "
+                                      f"is now in {self.current!r}"})
+                return
+            self._dispatch(ev)
             return
         ev = {"event": "behavior_done", "behavior": run.behavior,
               "outcome": run.outcome, "duration_s": round(run.duration_s, 1),
@@ -575,6 +594,7 @@ class MachineRuntime:
             return
         if self.executor.start(behavior):
             self._pending_start = False
+            self._behavior_node = current
 
     # -- the wake cycle --------------------------------------------------------
 
