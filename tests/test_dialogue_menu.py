@@ -13,10 +13,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ocarina import senses
+from ocarina import senses, server
 from ocarina.events import EventLog
 from ocarina.game import Game
 from ocarina.place import TraverseFailed
+from ocarina.protocol import BTN_A
 from ocarina.runtime import MachineRuntime
 from ocarina.server import ServerCore
 
@@ -155,28 +156,169 @@ class TestDialogueFold(DialogueCase):
         self.assertEqual(len(diags), 1)
 
 
-class TestDialogueChoose(DialogueCase):
+class FakeChoiceBox:
+    """A choice box that answers the tool's own inputs — the dialogue-side
+    twin of test_kokiri_slate's FakeShop, typewriter included.
+
+    A fresh box reads "displaying" for `typing_frames` state polls, and
+    while it does the game reads neither the stick nor the A: an A there
+    only fast-forwards the text (Message_Update's TEXT_STATE_CHOICE gate).
+    `eat_a` swallows that many SETTLED presses and re-issues the box —
+    the ninth flight's "chose ok, still needed an advance" and the tenth
+    flight's two further sightings, modelled.
+    """
+
+    def __init__(self, link, box, typing_frames=0, eat_a=0,
+                 never_settles=False):
+        self.link, self.box = link, dict(box)
+        self.typing_frames, self.never_settles = typing_frames, never_settles
+        self.eat_a = eat_a
+        self.a_presses = self.fast_forwards = self.commits = 0
+        self.chose = None
+        self._link_request = link.request
+        link.request = self.on_request
+        link.pad_hook = self.on_pad
+        self.show()
+
+    def show(self):
+        self.typing = float("inf") if self.never_settles else self.typing_frames
+        msg = dict(self.box)
+        msg["state"] = "displaying" if self.typing else self.box["state"]
+        self.link.world["msg_mode"] = 6
+        self.link.world["message"] = msg
+
+    def settle(self):
+        self.typing = 0
+        (self.link.world.get("message") or {})["state"] = self.box["state"]
+
+    def on_request(self, payload, link_timeout=5.0):
+        op = payload.get("op")
+        if op == "state" and self.typing:
+            # Every state read is a frame: the box types itself out under
+            # whoever is polling it.
+            self.typing -= 1
+            if not self.typing:
+                self.settle()
+            return self._link_request(payload, link_timeout)
+        if op == "pad" and not payload.get("clear") and self.typing:
+            frozen = (self.link.world.get("message") or {}).get("choice_index")
+            res = self._link_request(payload, link_timeout)
+            msg = self.link.world.get("message") or {}
+            if frozen is not None:
+                msg["choice_index"] = frozen         # the stick was eaten
+            if payload.get("buttons", 0) & BTN_A:
+                self.a_presses += 1
+                self.fast_forwards += 1
+                self.settle()                        # A only fast-forwards
+            return res
+        return self._link_request(payload, link_timeout)
+
+    def on_pad(self, payload, link):
+        if payload.get("clear") or not (payload.get("buttons", 0) & BTN_A):
+            return
+        if self.typing:
+            return                  # handled in on_request: the box ate it
+        self.a_presses += 1
+        if self.eat_a:
+            # The press landed as the box re-issued itself: lost, and the
+            # choice is still on screen (typing again).
+            self.eat_a -= 1
+            self.show()
+            return
+        self.commits += 1
+        self.chose = (link.world.get("message") or {}).get("choice_index", 0)
+        link.world["msg_mode"] = 0
+        link.world.pop("message", None)
+
+
+class ChoiceBoxCase(DialogueCase):
+    """dialogue_choose over a box that answers, with the live-tuned waits
+    shrunk to test speed (SlateCase's discipline)."""
+
+    FAST = {"_NUDGE_HOLD_S": 0.0, "_NUDGE_GAP_S": 0.0, "_BUY_POLL_S": 0.0,
+            "_CHOOSE_BOX_TIMEOUT_S": 0.05, "_CHOOSE_COMMIT_TIMEOUT_S": 0.05}
+
+    def setUp(self):
+        super().setUp()
+        self._slow = {name: getattr(server, name) for name in self.FAST}
+        for name, fast in self.FAST.items():
+            setattr(server, name, fast)
+
+    def tearDown(self):
+        for name, value in self._slow.items():
+            setattr(server, name, value)
+        super().tearDown()
+
+    def fake_box(self, box=None, **kw):
+        return FakeChoiceBox(self.link, box or CHOICE_BOX, **kw)
+
+
+class TestDialogueChoose(ChoiceBoxCase):
     def test_choose_nudges_to_target_and_confirms(self):
-        self.open_box(CHOICE_BOX)
+        box = self.fake_box()
         result = self.call_tool("dialogue_choose", {"option": 1})
         self.assertFalse(result["isError"], result["content"][0]["text"])
         body = self.tool_body(result)
         self.assertEqual(body["chose"], 1)
         self.assertEqual(body["label"], "No")
         # The cursor really moved (the stub models the game's own
-        # stick handling), and A confirmed it.
-        self.assertEqual(self.link.world["message"]["choice_index"], 1)
+        # stick handling), and A confirmed it on that option.
+        self.assertEqual(box.chose, 1)
+        self.assertEqual(box.commits, 1)
         pads = [r for r in self.link.requests if r.get("op") == "pad"]
         self.assertTrue(any(r.get("stick", [0, 0])[1] < 0 for r in pads))
 
     def test_choose_current_option_needs_no_nudge(self):
-        self.open_box(CHOICE_BOX)
+        box = self.fake_box()
         result = self.call_tool("dialogue_choose", {"option": 0})
-        self.assertFalse(result["isError"])
+        self.assertFalse(result["isError"], result["content"][0]["text"])
+        self.assertEqual(box.chose, 0)
         sticks = [r for r in self.link.requests
                   if r.get("op") == "pad" and r.get("stick") not in (None, [0, 0])]
         self.assertEqual(sticks, [])
 
+    # -- the typewriter (docs/29: the choice that needed a second press) --
+
+    def test_waits_out_the_typewriter_before_touching_the_box(self):
+        box = self.fake_box(typing_frames=3)
+        result = self.call_tool("dialogue_choose", {"option": 1})
+        self.assertFalse(result["isError"], result["content"][0]["text"])
+        # Nothing it nudged or pressed landed inside the typing window,
+        # and the choice went through on the first press.
+        self.assertEqual(box.fast_forwards, 0)
+        self.assertEqual(box.a_presses, 1)
+        self.assertEqual(box.chose, 1)
+
+    def test_swallowed_a_is_retried_until_the_choice_lands(self):
+        box = self.fake_box(typing_frames=1, eat_a=1)
+        result = self.call_tool("dialogue_choose", {"option": 1})
+        self.assertFalse(result["isError"], result["content"][0]["text"])
+        self.assertEqual(box.a_presses, 2)      # the first press was eaten
+        self.assertEqual(box.commits, 1)
+        self.assertEqual(box.chose, 1)
+        self.assertFalse(self.tool_body(result)["dialogue_open"])
+
+    def test_box_that_never_settles_refuses_before_any_press(self):
+        box = self.fake_box(never_settles=True)
+        result = self.call_tool("dialogue_choose", {"option": 0})
+        self.assertTrue(result["isError"])
+        text = result["content"][0]["text"]
+        self.assertIn("never finished typing", text)
+        self.assertIn("0xBB9", text)              # it names the box it waited on
+        self.assertEqual(box.a_presses, 0)
+
+    def test_choice_that_never_commits_is_never_ok(self):
+        box = self.fake_box(eat_a=5)
+        result = self.call_tool("dialogue_choose", {"option": 0})
+        self.assertTrue(result["isError"])
+        text = result["content"][0]["text"]
+        self.assertIn("still on screen", text)
+        self.assertIn("Would you like to save?", text)     # it quotes the box
+        self.assertEqual(box.a_presses, 2)                 # one retry, no more
+        self.assertEqual(box.commits, 0)
+
+
+class TestDialogueChooseRefusals(DialogueCase):
     def test_wrong_screen_errors(self):
         result = self.call_tool("dialogue_choose", {"option": 0})
         self.assertTrue(result["isError"])

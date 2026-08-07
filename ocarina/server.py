@@ -62,6 +62,14 @@ _BUY_POLL_S = 0.1
 _BUY_OUTCOME_TIMEOUT_S = 15.0   # the fanfare is long; a stuck modal is worse
 _BUY_SELECT_TRIES = 3
 
+#: dialogue_choose's own clocks, on the same typewriter as the shop's:
+#: how long a box gets to finish typing, and how long the choice box gets
+#: to let go of the screen after the confirming A (ninth flight: the
+#: choice "took" but needed a follow-up advance; tenth flight saw the
+#: swallowed press twice more).
+_CHOOSE_BOX_TIMEOUT_S = 2.0
+_CHOOSE_COMMIT_TIMEOUT_S = 1.5
+
 #: A box still "opening" or "displaying" is typing itself out, and the shop
 #: reads nothing until it stops: En_Ossan takes the stick and the A in
 #: TEXT_STATE_EVENT only (z_en_ossan.c:1240,1313), and an A inside that
@@ -347,15 +355,24 @@ class ServerCore:
         st = self.game.state()
         if st.get("msg_mode", 0) == 0:
             return {"ok": False, "error": "no dialogue is open"}
-        msg = st.get("message")
-        if msg is None:
+        if st.get("message") is None:
             return {"ok": False,
                     "error": "instrument predates the dialogue sense — "
                              "rebuild SoH with the 2026-08-04 AgentLink patch"}
+        # Read the box only once it has settled: a nudge inside the
+        # typewriter is eaten, and so is the A behind it (buy's phase 3-4
+        # lesson, docs/28 — the same mechanic, the same clock).
+        msg = self._settled_box(_CHOOSE_BOX_TIMEOUT_S)
+        if msg is None:
+            return {"ok": False,
+                    "error": "the box never finished typing, so the cursor "
+                             "nudge (and the A behind it) would only "
+                             "fast-forward it — " + _quote_box(self._message())}
         if msg.get("state") != "choice":
             return {"ok": False,
                     "error": f"no choice is being offered "
-                             f"(box state: {msg.get('state')})"}
+                             f"(box state: {msg.get('state')}) — "
+                             + _quote_box(msg)}
         choices = msg.get("choices") or []
         try:
             target = int(args.get("option"))
@@ -369,11 +386,57 @@ class ServerCore:
         if cur != target:
             return {"ok": False,
                     "error": f"cursor would not reach option {target} "
-                             f"(sits at {cur})"}
+                             f"(sits at {cur}) — " + _quote_box(self._message())}
+        text_id = msg.get("text_id")
+        settled = self._settled_box(_CHOOSE_BOX_TIMEOUT_S)
+        if settled is None or settled.get("state") != "choice":
+            return {"ok": False,
+                    "error": f"the choice box did not hold still for the A "
+                             f"on option {target} — "
+                             + _quote_box(self._message())}
         self.game.press("A", frames=3)
+        # Verify the choice COMMITTED: the box has to close or be replaced.
+        # A press that lands as the box re-issues itself is simply lost, and
+        # the ninth flight's "ok" then needed a follow-up advance by hand.
+        if not self._choice_committed(text_id, _CHOOSE_COMMIT_TIMEOUT_S):
+            # Eaten. The box re-issues itself under a lost press, and that
+            # sends its cursor home with it — so the retry re-verifies the
+            # cursor before pressing, never just presses again.
+            live = self._settled_box(_CHOOSE_BOX_TIMEOUT_S) or {}
+            if (live.get("text_id") == text_id
+                    and live.get("state") == "choice"):
+                if self._cursor_to(target,
+                                   start=live.get("choice_index", 0)) != target:
+                    return {"ok": False,
+                            "error": f"the cursor would not go back to option "
+                                     f"{target} for the retry — "
+                                     + _quote_box(self._message())}
+                self.game.press("A", frames=3)
+            if not self._choice_committed(text_id, _CHOOSE_COMMIT_TIMEOUT_S):
+                return {"ok": False,
+                        "error": f"option {target} was pressed twice and the "
+                                 f"same choice box is still on screen — "
+                                 + _quote_box(self._message())}
         label = choices[target] if target < len(choices) else None
         return {"ok": True, "chose": target, "label": label,
                 "dialogue_open": self.game.state().get("msg_mode", 0) != 0}
+
+    def _choice_committed(self, text_id, timeout: float) -> bool:
+        """Did the choice box we just pressed A on let go? True once it is
+        closed, replaced, or settled into some other state; False if that
+        same choice box is still offering the same choice after `timeout`
+        (the press was eaten — retry it)."""
+        deadline = time.monotonic() + timeout
+        while True:
+            msg = self._message()
+            if msg is None or msg.get("text_id") != text_id:
+                return True
+            state = msg.get("state")
+            if state != "choice" and state in _SETTLED_BOX_STATES:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            self.game.wait(_BUY_POLL_S)
 
     def _cursor_to(self, target: int, start: int | None = None,
                    tries: int = 8) -> int:
@@ -857,7 +920,12 @@ class ServerCore:
         if equips is None or "worn" not in equips:
             return {"blind": "instrument predates the equipment sense — "
                              "rebuild SoH with the 2026-08-04 AgentLink patch"}
-        return senses.equipment_view(equips)
+        view = senses.equipment_view(equips)
+        # The raw masks beside the decode: a debug affordance on a menu
+        # document (the pause screen presents this same information as icons).
+        view["masks"] = {"worn": f"0x{int(equips.get('worn') or 0):04X}",
+                         "owned": f"0x{int(equips.get('owned') or 0):04X}"}
+        return view
 
     def _journal_tail(self, n: int = 200):
         path = self.log.persist_path

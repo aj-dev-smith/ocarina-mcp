@@ -160,6 +160,28 @@ class TestResources(ServerCase):
         body = self.read("oot://journal/mechanical")
         self.assertTrue(any(e["event"] == "entered" for e in body))
 
+    def test_equipment_document_carries_the_raw_masks(self):
+        # Tenth flight: the sword/shield rows read null/empty on the wire
+        # while tunic/boots parsed, and nothing in the document could say
+        # whether the masks or the decode were at fault. They ride along now.
+        self.link.world["equips"] = {"b": 0x3B, "c_left": 0xFF, "c_down": 0xFF,
+                                     "c_right": 0xFF,
+                                     "worn": 0x1122, "owned": 0x3333}
+        body = self.read("oot://menu/equipment")
+        self.assertEqual(body["worn"], {"sword": "master_sword",
+                                        "shield": "hylian_shield",
+                                        "tunic": "kokiri_tunic",
+                                        "boots": "kokiri_boots"})
+        self.assertEqual(body["owned"]["sword"],
+                         ["kokiri_sword", "master_sword"])
+        self.assertEqual(body["masks"], {"worn": "0x1122", "owned": "0x3333"})
+
+    def test_equipment_masks_are_hex_even_when_empty(self):
+        self.link.world["equips"] = {"worn": 0, "owned": 0}
+        body = self.read("oot://menu/equipment")
+        self.assertIsNone(body["worn"]["sword"])
+        self.assertEqual(body["masks"], {"worn": "0x0000", "owned": "0x0000"})
+
     def test_not_yet_resources(self):
         # map/quest stay honest not-yets; dialogue/items/equipment
         # graduated in 0.8.0 (docs/27).
