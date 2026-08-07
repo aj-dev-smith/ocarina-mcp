@@ -91,7 +91,7 @@ class TestEquip(SlateCase):
         result = self.call_tool("equip", {"item": "hylian_shield"})
         self.assertFalse(result["isError"], result["content"][0]["text"])
         self.assertEqual(self.link.equips_sent,
-                         [{"type": "dojo", "op": "equip_gear",
+                         [{"type": "agent", "op": "equip_gear",
                            "equip_type": 1, "value": 2}])
         body = self.tool_body(result)
         self.assertEqual(body["equipped"], "hylian_shield")
@@ -161,7 +161,7 @@ class TestEquip(SlateCase):
     def test_old_instrument_names_the_rebuild(self):
         self.arm()
         self.link.equip_script = [
-            {"status": "failure", "error": "unknown dojo op: equip_gear"}]
+            {"status": "failure", "error": "unknown agent op: equip_gear"}]
         text = self.error(self.call_tool("equip", {"item": "hylian_shield"}))
         self.assertIn("rebuild SoH", text)
         self.assertIn("2026-08-05", text)

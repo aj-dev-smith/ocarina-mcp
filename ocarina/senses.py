@@ -48,7 +48,7 @@ Known honesty gaps, flagged rather than hidden:
 - Dialogue text is on the wire as of 0.8.0 (docs/27) EXCEPT wide (JPN)
   text, which arrives as `text: null` + a `wide` flag — blind with a
   flag, never silently wrong. An instrument predating the 2026-08-04
-  dojo patch carries no `message` block at all; the runtime diagnoses
+  AgentLink patch carries no `message` block at all; the runtime diagnoses
   that loudly, once.
 - The menu documents cover items and equipment only; map and quest
   subscreens stay honest not-yets (their substrates aren't on the wire).
@@ -602,7 +602,7 @@ class SeenKinds:
 
 
 def translate(msg: dict):
-    """One wire message (DojoLink dojo_event or Sail hook) -> one curated
+    """One wire message (AgentLink agent_event or Sail hook) -> one curated
     world event, or None to drop it. (Spawn narration no longer lives
     here — it is census-driven; see Sightings/spawn_events.)
 

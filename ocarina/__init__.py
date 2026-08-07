@@ -126,7 +126,7 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: item subscreen's own commit, its own legality gates) + a real
 #: C-button press, verified off the new `equips` wire block; inventory
 #: on the wire graduates `oot://menu/items` and `oot://menu/equipment`
-#: as documents. An instrument predating the 2026-08-04 dojo patch is
+#: as documents. An instrument predating the 2026-08-04 AgentLink patch is
 #: diagnosed loudly and read as blind, never silently.
 #: 0.9.0: THE KOKIRI SLATE (dojo docs/28, ratified by AJ 2026-08-05) —
 #: the two tools standing between the bench and its first overworld

@@ -86,7 +86,7 @@ class TestWhenTransitions(RuntimeCase):
                         msg="fighting")
         # The kill lands: wire event arrives while the body runs, then the
         # baba leaves the world before the body returns.
-        self.link.push_wire({"type": "dojo_event", "event": "enemy_defeat",
+        self.link.push_wire({"type": "agent_event", "event": "enemy_defeat",
                              "id": 0x0055, "params": 0})
         self.link.world["actors"] = []
         self.tick_until(lambda: any(e["outcome"] == "success"
@@ -149,7 +149,7 @@ class TestWhenTransitions(RuntimeCase):
 class TestWakes(RuntimeCase):
     def hurt(self):
         self.link.world["health"] = 40
-        self.link.push_wire({"type": "dojo_event", "event": "health_change",
+        self.link.push_wire({"type": "agent_event", "event": "health_change",
                              "amount": -8, "health": 40})
 
     def test_wake_freezes_and_pushes(self):

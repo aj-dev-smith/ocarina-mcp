@@ -171,7 +171,7 @@ class TestResources(ServerCase):
 class TestWakeChannel(ServerCase):
     def test_wake_pushes_a_channel_notification(self):
         self.link.world["health"] = 40
-        self.link.push_wire({"type": "dojo_event", "event": "health_change",
+        self.link.push_wire({"type": "agent_event", "event": "health_change",
                              "amount": -8, "health": 40})
         for _ in range(10):
             self.runtime.tick()

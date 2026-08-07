@@ -343,7 +343,7 @@ class ServerCore:
         if msg is None:
             return {"ok": False,
                     "error": "instrument predates the dialogue sense — "
-                             "rebuild SoH with the 2026-08-04 dojo patch"}
+                             "rebuild SoH with the 2026-08-04 AgentLink patch"}
         if msg.get("state") != "choice":
             return {"ok": False,
                     "error": f"no choice is being offered "
@@ -418,7 +418,7 @@ class ServerCore:
         if equips is None or "worn" not in equips:
             return {"ok": False,
                     "error": "instrument predates the equipment sense — "
-                             "rebuild SoH with the 2026-08-04 dojo patch"}
+                             "rebuild SoH with the 2026-08-04 AgentLink patch"}
         owned = senses.equipment_view(equips)["owned"][row]
         if name not in owned:
             return {"ok": False,
@@ -496,7 +496,7 @@ class ServerCore:
         if st.get("msg_mode", 0) != 0 and st.get("message") is None:
             return {"ok": False,
                     "error": "instrument predates the dialogue sense — "
-                             "rebuild SoH with the 2026-08-04 dojo patch"}
+                             "rebuild SoH with the 2026-08-04 AgentLink patch"}
 
         # -- 2. must already be talking to the shopkeeper -----------------
         # buy is a UI verb: walking up to the counter and pressing A is the
@@ -669,7 +669,7 @@ class ServerCore:
         if equips is None:
             return {"ok": False,
                     "error": "instrument predates the equips sense — "
-                             "rebuild SoH with the 2026-08-04 dojo patch"}
+                             "rebuild SoH with the 2026-08-04 AgentLink patch"}
         button = next((b for b in self._C_BUTTONS
                        if equips.get(b[1]) == item_id), None)
         if button is None:
@@ -769,7 +769,7 @@ class ServerCore:
         body: dict = {"open": box_open}
         if box_open and msg is None:
             body["blind"] = ("instrument predates the dialogue sense — "
-                             "rebuild SoH with the 2026-08-04 dojo patch")
+                             "rebuild SoH with the 2026-08-04 AgentLink patch")
         elif msg is not None:
             body["current"] = {k: msg[k] for k in
                                ("text", "state", "text_id", "choices",
@@ -786,7 +786,7 @@ class ServerCore:
         inv = st.get("inventory")
         if inv is None:
             return {"blind": "instrument predates the menu senses — "
-                             "rebuild SoH with the 2026-08-04 dojo patch"}
+                             "rebuild SoH with the 2026-08-04 AgentLink patch"}
         items, ammo = inv.get("items") or [], inv.get("ammo") or []
         held = []
         for slot, item in enumerate(items):
@@ -810,7 +810,7 @@ class ServerCore:
         equips = self.game.state().get("equips")
         if equips is None or "worn" not in equips:
             return {"blind": "instrument predates the equipment sense — "
-                             "rebuild SoH with the 2026-08-04 dojo patch"}
+                             "rebuild SoH with the 2026-08-04 AgentLink patch"}
         return senses.equipment_view(equips)
 
     def _journal_tail(self, n: int = 200):

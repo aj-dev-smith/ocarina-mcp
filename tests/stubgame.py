@@ -59,7 +59,7 @@ class StubLink:
         return out
 
     def push_wire(self, msg: dict) -> None:
-        """Tests inject wire messages (dojo_event / hook shapes) here."""
+        """Tests inject wire messages (agent_event / hook shapes) here."""
         self._events.append(msg)
 
     def request(self, payload: dict, timeout: float = 5.0) -> dict:

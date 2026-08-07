@@ -100,7 +100,7 @@ class GameLink:
                 self._dispatch(msg)
 
     def _dispatch(self, msg: dict) -> None:
-        if msg.get("type") == "dojo_event":
+        if msg.get("type") == "agent_event":
             self.events.put(msg)
             return
         msg_id = msg.get("id")

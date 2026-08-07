@@ -74,7 +74,7 @@ class Game:
     # -- raw dojo ops ------------------------------------------------------
 
     def state(self) -> dict:
-        st = self.link.request({"type": "dojo", "op": "state"})
+        st = self.link.request({"type": "agent", "op": "state"})
         self._observe_hits(st)
         if self.state_observer is not None:
             self.state_observer(st)
@@ -99,34 +99,34 @@ class Game:
                 self._actor_hp[key] = hp
 
     def pad(self, buttons: int = 0, stick: tuple[int, int] = (0, 0)) -> None:
-        self.link.request({"type": "dojo", "op": "pad", "buttons": buttons,
+        self.link.request({"type": "agent", "op": "pad", "buttons": buttons,
                            "stick": [int(stick[0]), int(stick[1])]})
 
     def pad_clear(self) -> None:
-        self.link.request({"type": "dojo", "op": "pad", "clear": True})
+        self.link.request({"type": "agent", "op": "pad", "clear": True})
 
     # Savestate methods deliberately not ported — see module docstring.
 
     def pause(self, on: bool = True) -> None:
-        self.link.request({"type": "dojo", "op": "pause", "on": on})
+        self.link.request({"type": "agent", "op": "pause", "on": on})
 
     def tick(self, n: int = 1) -> None:
-        self.link.request({"type": "dojo", "op": "tick", "n": n})
+        self.link.request({"type": "agent", "op": "tick", "n": n})
 
     def events_on(self, frame_interval: int = 20) -> None:
-        self.link.request({"type": "dojo", "op": "events", "on": True,
+        self.link.request({"type": "agent", "op": "events", "on": True,
                            "frame_interval": frame_interval})
 
     def hud_push(self, panels: Optional[dict[str, list]] = None,
                  ticker: Optional[list[str]] = None) -> dict:
         """Push Agent HUD content (docs/11 §7).
 
-        `panels` maps panel name (warden|navigator|strategist|dojo) to an
+        `panels` maps panel name (warden|navigator|strategist|agent) to an
         ORDERED list of [key, value] pairs — a list, not a dict, because the
         wire is JSON and the game renders fields in the order given.
         Setting a panel replaces it wholesale.
         """
-        payload: dict = {"type": "dojo", "op": "hud", "sub": "set"}
+        payload: dict = {"type": "agent", "op": "hud", "sub": "set"}
         if panels:
             payload["panels"] = panels
         if ticker:
@@ -137,13 +137,13 @@ class Game:
         """Read the HUD back. `draws` advances only while the window is
         actually rendering, so this distinguishes 'the store took it' from
         'something drew it' — the op replying success proves neither."""
-        return self.link.request({"type": "dojo", "op": "hud", "sub": "get"})
+        return self.link.request({"type": "agent", "op": "hud", "sub": "get"})
 
     def hud_clear(self) -> dict:
-        return self.link.request({"type": "dojo", "op": "hud", "sub": "clear"})
+        return self.link.request({"type": "agent", "op": "hud", "sub": "clear"})
 
     def hud_show(self, on: bool = True) -> dict:
-        return self.link.request({"type": "dojo", "op": "hud", "sub": "show", "on": on})
+        return self.link.request({"type": "agent", "op": "hud", "sub": "show", "on": on})
 
     def overlay_push(self, labels: list[dict]) -> dict:
         """Push the debug overlay: floating world-space labels over actors.
@@ -155,17 +155,17 @@ class Game:
         that despawned since the snapshot. Human debug instrument only —
         see overlay.py's one-way promise.
         """
-        return self.link.request({"type": "dojo", "op": "overlay",
+        return self.link.request({"type": "agent", "op": "overlay",
                                   "sub": "set", "labels": labels})
 
     def overlay_get(self) -> dict:
         """Read the overlay store back. `applies` advances only when the
         game's main thread turns a push into nametags — the op replying
         success proves staging, not rendering (the HUD's `draws` rule)."""
-        return self.link.request({"type": "dojo", "op": "overlay", "sub": "get"})
+        return self.link.request({"type": "agent", "op": "overlay", "sub": "get"})
 
     def overlay_clear(self) -> dict:
-        return self.link.request({"type": "dojo", "op": "overlay", "sub": "clear"})
+        return self.link.request({"type": "agent", "op": "overlay", "sub": "clear"})
 
     def scan(self, rays: int = 24, length: float = 600.0, height: float = 26.0,
              from_yaw: Optional[int] = None, span: Optional[int] = None,
@@ -182,7 +182,7 @@ class Game:
         is the dynapoly LEDGE-mount prompt and is permanently false on a scene
         vine wall, which reads as "nothing climbable anywhere".
         """
-        req: dict = {"type": "dojo", "op": "scan", "rays": int(rays),
+        req: dict = {"type": "agent", "op": "scan", "rays": int(rays),
                      "length": float(length), "height": float(height)}
         if from_yaw is not None:
             req["from_yaw"] = int(from_yaw) & 0xFFFF
@@ -865,11 +865,11 @@ class Game:
                 return {"ok": True, **{k: v for k, v in res.items()
                                        if k not in ("type", "id", "status")}}
             err = str(res.get("error", ""))
-            if "unknown dojo op" in err:
+            if "unknown agent op" in err:
                 return {"ok": False,
                         "error": f"this instrument predates the "
                                  f"{payload.get('op')!r} op — rebuild SoH "
-                                 f"with the {patch} dojo patch"}
+                                 f"with the {patch} AgentLink patch"}
             if status != "try_again":
                 return {"ok": False, "error": err or "op failed"}
             if time.monotonic() > deadline:
@@ -884,7 +884,7 @@ class Game:
         exact function the pause menu's Yes button calls — behind the
         pause-legality gate (legal exactly when a player could have
         paused and pressed B; docs/27 call 1). Refusals come back named."""
-        return self._poll_staged_op({"type": "dojo", "op": "save"}, timeout)
+        return self._poll_staged_op({"type": "agent", "op": "save"}, timeout)
 
     def assign_c(self, item_id: int, button: int, timeout: float = 3.0) -> dict:
         """Put an inventory item on a C button (0=C-left, 1=C-down,
@@ -892,7 +892,7 @@ class Game:
         gates included (docs/27). Verify against state()['equips'] —
         the write is the game's, the proof is the wire's."""
         return self._poll_staged_op(
-            {"type": "dojo", "op": "assign_c",
+            {"type": "agent", "op": "assign_c",
              "item": int(item_id), "button": int(button)}, timeout)
 
     def equip_gear(self, equip_type: int, value: int,
@@ -910,7 +910,7 @@ class Game:
         — the write is the game's, the proof is the wire's, and that mask
         is the exact predicate Mido's gate evaluates."""
         return self._poll_staged_op(
-            {"type": "dojo", "op": "equip_gear",
+            {"type": "agent", "op": "equip_gear",
              "equip_type": int(equip_type), "value": int(value)},
             timeout, patch="2026-08-05")
 

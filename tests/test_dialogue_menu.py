@@ -218,7 +218,7 @@ class TestSaveGame(DialogueCase):
 
     def test_old_instrument_names_the_rebuild(self):
         self.link.save_script = [
-            {"status": "failure", "error": "unknown dojo op: save"}]
+            {"status": "failure", "error": "unknown agent op: save"}]
         result = self.call_tool("save_game")
         self.assertTrue(result["isError"])
         self.assertIn("rebuild SoH", result["content"][0]["text"])
@@ -242,7 +242,7 @@ class TestUseItem(DialogueCase):
         self.assertEqual(body["ammo_before"], 5)
         # The assignment went through the instrument's own commit...
         assigns = [r for r in self.link.requests if r.get("op") == "assign_c"]
-        self.assertEqual(assigns, [{"type": "dojo", "op": "assign_c",
+        self.assertEqual(assigns, [{"type": "agent", "op": "assign_c",
                                     "item": 0x01, "button": 0}])
         self.assertEqual(self.link.world["equips"]["c_left"], 0x01)
         # ...and a real C press followed.

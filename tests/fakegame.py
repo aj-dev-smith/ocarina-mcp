@@ -52,7 +52,7 @@ class FakeGame:
         # pusher offline: panel names are validated, sets replace, ticker
         # appends. Nothing is drawn — that half only the real game can prove.
         self.hud_panels: dict[str, list] = {p: [] for p in
-                                            ("warden", "navigator", "strategist", "dojo")}
+                                            ("warden", "navigator", "strategist", "agent")}
         self.hud_ticker: list[str] = []
         # Overlay store. Enough of DojoOverlay.cpp's contract to test the
         # pusher offline: labels validated, a set replaces the whole set.
@@ -137,7 +137,7 @@ class FakeGame:
                     # and "baba gone from the actor list" is exactly the
                     # ambiguous signal that let a fleeing skill score a win.
                     self.pending_events.append(
-                        {"type": "dojo_event", "event": "enemy_defeat",
+                        {"type": "agent_event", "event": "enemy_defeat",
                          "id": ACTOR_EN_DEKUBABA, "params": 0})
         self.b_was_down = b_down
 
@@ -263,7 +263,7 @@ class FakeGame:
         res = {"type": "result", "id": payload.get("id"), "status": "success"}
         if payload.get("type") == "command":
             return res
-        if payload.get("type") != "dojo":
+        if payload.get("type") != "agent":
             res["status"] = "failure"
             return res
 

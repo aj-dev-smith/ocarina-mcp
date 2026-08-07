@@ -40,9 +40,9 @@ _DISPATCHED_MACHINE_EVENTS = senses.DISPATCHED_MACHINE_EVENTS
 
 def _from_wire(msg: dict) -> Optional[dict]:
     """Normalize a message drained from GameLink (ported from the
-    workshop's bus.from_game): dojo_event passes through; Sail's native
+    workshop's bus.from_game): agent_event passes through; Sail's native
     hook feed flattens so the hook type is the event name."""
-    if msg.get("type") == "dojo_event":
+    if msg.get("type") == "agent_event":
         return dict(msg)
     if msg.get("type") == "hook":
         hook = msg.get("hook") or {}
@@ -254,7 +254,7 @@ class MachineRuntime:
             # Best-effort and separate — a HUD failure must never cost the
             # labels, which are the primary instrument.
             try:
-                self.game.hud_push(panels={"dojo": overlay.boundary(
+                self.game.hud_push(panels={"agent": overlay.boundary(
                     self._last_state, len(labels))})
             except LinkError:
                 pass
@@ -318,7 +318,7 @@ class MachineRuntime:
             self._record({"event": "diagnostic",
                           "text": "census carries no `sighted` bits — this "
                                   "instrument predates sight-gating (rebuild SoH "
-                                  "with the current dojo patch); world senses are "
+                                  "with the current AgentLink patch); world senses are "
                                   "BLIND, deliberately, rather than X-ray"})
         # A truncated census means the world senses are working from a
         # partial world — say so, per scene, with the numbers. Per scene

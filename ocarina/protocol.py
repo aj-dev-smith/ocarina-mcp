@@ -7,7 +7,7 @@ Transport: the game is the TCP *client*; it connects out to us (default
 127.0.0.1:43384). Messages both ways are JSON documents delimited by a
 null byte (\\0). Requests carry an "id" and a "type"; responses echo the id
 with type == "result". DojoLink events arrive unsolicited with
-type == "dojo_event".
+type == "agent_event".
 """
 
 DEFAULT_PORT = 43384
