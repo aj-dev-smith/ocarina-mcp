@@ -635,7 +635,16 @@ def translate(msg: dict):
         return {"event": "environment", "cue": "scene_change",
                 "scene": msg.get("scene", -1)}
     if name == "load_game":
-        return {"event": "environment", "cue": "game_loaded"}
+        # The file-select screen presents the chosen slot; the wire's
+        # `file` is that choice (0-based fileNum). Curation dropped it
+        # through ten flights — the tenth's wrong-file hour was announced
+        # at t=0 and stripped here (docs/29). An instrument predating the
+        # field omits it: absent, never guessed, so a guard naming it
+        # warns instead of silently passing the wrong line.
+        ev = {"event": "environment", "cue": "game_loaded"}
+        if "file" in msg:
+            ev["file"] = msg["file"]
+        return ev
     if name == "OnActorInit":
         # No longer a presentation: init fires for the whole room at
         # load ("entered the world"). `spawn` now narrates first

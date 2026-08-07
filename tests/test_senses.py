@@ -148,6 +148,22 @@ class TestSpawnNarration(SightedCase):
         self.assertIsNone(senses.translate(
             {"event": "OnActorInit", "actorId": 0x0055}))
 
+    def test_game_loaded_carries_the_file_slot(self):
+        """The wire has sent `file` (0-based fileNum) since first light;
+        curation dropped it and the tenth flight paid an hour on the
+        wrong save line (docs/29). The slot is the file-select screen's
+        own presentation."""
+        ev = senses.translate({"event": "load_game", "file": 1})
+        self.assertEqual(ev["cue"], "game_loaded")
+        self.assertEqual(ev["file"], 1)
+
+    def test_game_loaded_omits_file_on_an_old_instrument(self):
+        # Absent, never guessed — a guard naming `file` must warn, not
+        # silently compare a made-up value.
+        ev = senses.translate({"event": "load_game"})
+        self.assertEqual(ev["cue"], "game_loaded")
+        self.assertNotIn("file", ev)
+
 
 class TestInstrumentHonesty(unittest.TestCase):
     def test_census_carries_sight_detection(self):
