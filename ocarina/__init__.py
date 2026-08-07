@@ -153,7 +153,41 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: rest, `dropped_item` where the vocabulary still has a gap) — the
 #: explicitly-deferred item, commissioned; the 40-rupee hunt is all
 #: drops.
-OCARINA_VERSION = "0.9.0"
+#: 0.10.0: THE BLOCKING WAKE (dojo docs/31, ratified by AJ 2026-08-07 the
+#: afternoon the channel path finally live-verified — "I kind of hate the
+#: flag"). Wake delivery stops being a Claude Code channel push and
+#: becomes a plain blocking MCP tool call, portable to any client: a
+#: contract bump, SURFACE.md amended. `resume(max_sleep?, max_block_s?)`
+#: unfreezes and BLOCKS, returning the next wake pack as its own result —
+#: one call is one act of living, and because the world only runs while
+#: someone is listening, a wake CANNOT fire into silence (ten flights of
+#: dropped pushes and hand-typed "wake"s become structurally impossible,
+#: not mitigated). `await_wake(max_block_s?)` graduates from spec-only to
+#: built as the re-attach verb: it listens without resuming (a severed
+#: block must never be re-armed with resume(), which re-runs the current
+#: node's body — docs/28), returns a parked wake at once, blocks while
+#: the world runs, and errors loudly when a delivered wake is unanswered
+#: (you are holding the ball, not waiting). One awaiter at a time, a loud
+#: error, never a queue. A severed block (cancellation, dead client,
+#: max_block_s) leaves the machine PLAYING ON — it is the autopilot — and
+#: the next wake parks frozen with its default armed, which is today's
+#: machinery demoted from normal path to crash recovery. The wake pack
+#: grows an `interval` section: "while you were out" as state deltas,
+#: repeat-collapsed event tallies, novel firsts quoted verbatim, and both
+#: clocks — compression of narration that already passed curation, never
+#: a new sense. Channels stay, demoted to an optional Claude Code nicety;
+#: the push carries the same single-sourced pack. Riding the same bump:
+#: SCREENSHOT graduates from NOT_YET (backlog #5, four flights of AJ's
+#: eyes resolving what probes argued about) — the 2026-08-07 AgentLink
+#: `screenshot` op reads framebuffer 0 (Metal's deferred blit + the GL
+#: path; overlay labels included, deliberately: beliefs ON truth), the
+#: wire carries raw RGBA8 box-averaged to `max_width` (default 640, both
+#: sizes always reported — the 0.6.0 boundary lesson), and the PNG is
+#: made ocarina-side in stdlib `screenshot.py`, returned as a real MCP
+#: image block: actual pixels to the mind's vision, a debugging sense,
+#: never a stream. An old instrument answers "rebuild SoH", never a
+#: silent stub.
+OCARINA_VERSION = "0.10.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

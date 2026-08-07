@@ -9,7 +9,27 @@ freeze logic depends on: TWO counters — `frame` always advances,
 
 from __future__ import annotations
 
+import base64
+
 from ocarina.protocol import ACTORCAT_ENEMY
+
+
+def frame_bytes(width: int, height: int) -> bytes:
+    """A recognisable RGBA8 test frame: every pixel's red channel is its
+    index, so a flipped/short/misaligned buffer shows up as wrong pixels
+    rather than as a plausible picture."""
+    out = bytearray()
+    for i in range(width * height):
+        out += bytes((i & 0xFF, 0x20, 0x80, 0xFF))
+    return bytes(out)
+
+
+def canned_frame(width: int, height: int, full: tuple | None = None) -> dict:
+    """The `screenshot` op's success reply, exactly as AgentLink builds it."""
+    fw, fh = full or (width, height)
+    return {"format": "rgba8", "width": width, "height": height,
+            "full_width": fw, "full_height": fh,
+            "pixels": base64.b64encode(frame_bytes(width, height)).decode()}
 
 
 def baba_actor(dist_xz: float = 300.0, health: int = 2,
@@ -34,6 +54,12 @@ class StubLink:
         self.save_script: list = []     # queued save-op replies for tests
         self.equips_sent: list = []     # equip_gear payloads seen (docs/28)
         self.equip_script: list = []    # queued equip_gear replies for tests
+        #: The canned frame the `screenshot` op hands back: a 4x3 RGBA8
+        #: window with a distinguishable first pixel, base64'd exactly as
+        #: the instrument does. `screenshot_script` queues replies for the
+        #: failure paths (unknown op, backend refusal, short payload).
+        self.screenshot_size = (4, 3)
+        self.screenshot_script: list = []
         #: Called with (payload, self) on every pad op — how a test scripts
         #: a shop: the game answers a stick nudge or an A press by moving
         #: the message box on, exactly as En_Ossan's state machine does.
@@ -99,6 +125,14 @@ class StubLink:
             res.update(scripted)
             if res.get("status") == "success" or "status" not in scripted:
                 self.saves += 1
+        elif op == "screenshot":
+            scripted = (self.screenshot_script.pop(0)
+                        if self.screenshot_script else None)
+            if scripted is not None:
+                res.update(scripted)
+            else:
+                w, h = self.screenshot_size
+                res.update(canned_frame(w, h))
         elif op == "assign_c":
             item, button = payload.get("item"), payload.get("button")
             key = ("c_left", "c_down", "c_right")[button]

@@ -293,5 +293,110 @@ class TestInstrumentHonesty(unittest.TestCase):
         self.assertIsNone(senses.census_truncated({"actors": [{}] * 12}))
 
 
+class TestIntervalDigest(unittest.TestCase):
+    """"While you were out" (0.10.0, docs/31): the wake pack's
+    compression of the interval the mind did not watch."""
+
+    def setUp(self):
+        self.now = 1000.0
+        self.interval = senses.IntervalDigest(clock=lambda: self.now)
+
+    def render(self, *events, elapsed=0.0):
+        for ev in events:
+            self.interval.note_event(ev)
+        self.now += elapsed
+        return self.interval.render()
+
+    def test_tallies_collapse_by_event_and_key(self):
+        out = self.render(*[{"event": "behavior_done", "behavior": "stand_watch",
+                             "outcome": "success"} for _ in range(41)],
+                          {"event": "behavior_done", "behavior": "walk_about"})
+        self.assertIn({"event": "behavior_done", "behavior": "stand_watch",
+                       "count": 41}, out["events"])
+        self.assertIn({"event": "behavior_done", "behavior": "walk_about",
+                       "count": 1}, out["events"])
+
+    def test_novel_sightings_are_quoted_verbatim_repeats_counted(self):
+        out = self.render({"event": "spawn", "kind": "deku_baba", "novel": 1,
+                           "state": "closed", "seq": 7},
+                          {"event": "spawn", "kind": "deku_baba", "novel": 0},
+                          {"event": "spawn", "kind": "deku_baba", "novel": 0})
+        self.assertEqual(out["firsts"],
+                         [{"event": "spawn", "kind": "deku_baba", "novel": 1,
+                           "state": "closed", "seq": 7}])
+        self.assertIn({"event": "spawn", "kind": "deku_baba", "count": 2},
+                      out["events"])
+
+    def test_first_journal_text_quoted_repeats_counted(self):
+        out = self.render({"event": "journal", "transition": "baba-done",
+                           "text": "baba down after 4.0s"},
+                          {"event": "journal", "transition": "baba-done",
+                           "text": "baba down after 4.0s"},
+                          {"event": "journal", "transition": "baba-done",
+                           "text": "baba down after 9.0s"})
+        texts = [e["text"] for e in out["firsts"]]
+        self.assertEqual(texts, ["baba down after 4.0s", "baba down after 9.0s"])
+        self.assertIn({"event": "journal", "transition": "baba-done",
+                       "count": 1}, out["events"])
+
+    def test_pickups_read_as_items_not_as_a_tally(self):
+        out = self.render({"event": "pickup", "kind": "green_rupee"},
+                          {"event": "pickup", "kind": "green_rupee"},
+                          {"event": "pickup", "kind": "health"})
+        self.assertEqual(out["items_gained"], {"green_rupee": 2, "health": 1})
+        self.assertNotIn("events", out)
+
+    def test_region_trail_collapses_consecutive_repeats(self):
+        def entered(region):
+            return {"event": "place", "cue": "region_entered", "region": region}
+        out = self.render(entered("ydan:r@30,0,70"), entered("ydan:r@30,0,70"),
+                          entered("ydan:r@10,0,40"), entered("ydan:r@30,0,70"))
+        self.assertEqual(out["region_trail"],
+                         ["ydan:r@30,0,70", "ydan:r@10,0,40", "ydan:r@30,0,70"])
+
+    def test_state_delta_carries_only_what_changed(self):
+        self.interval.note_state({"hearts": 3.0, "rupees": 23, "scene": 85},
+                                 frames=100)
+        self.interval.note_state({"hearts": 3.0, "rupees": 40, "scene": 85},
+                                 frames=180)
+        self.interval.note_state({"hearts": 2.5, "rupees": 40, "scene": 85},
+                                 frames=923)
+        out = self.render(elapsed=41.2)
+        self.assertEqual(out["delta"], {"hearts": {"from": 3.0, "to": 2.5},
+                                        "rupees": {"from": 23, "to": 40}})
+        self.assertEqual(out["wall_s"], 41.2)
+        self.assertEqual(out["ticks"], 823)
+
+    def test_reset_starts_a_fresh_interval(self):
+        self.render({"event": "damage_taken", "hearts": 0.5})
+        self.interval.note_state({"hearts": 2.5}, frames=10)
+        self.interval.reset()
+        self.interval.note_state({"hearts": 2.5}, frames=20)
+        out = self.render(elapsed=1.0)
+        self.assertEqual(out, {"wall_s": 1.0, "ticks": 0})
+
+    def test_empty_interval_says_nothing_but_the_clock(self):
+        self.assertEqual(self.render(elapsed=0.5), {"wall_s": 0.5})
+
+    def test_lines_render_every_section(self):
+        self.interval.note_state({"hearts": 3.0}, frames=0)
+        self.interval.note_state({"hearts": 2.5}, frames=60)
+        out = self.render({"event": "damage_taken", "hearts": 0.5},
+                          {"event": "spawn", "kind": "keese", "novel": 1},
+                          {"event": "pickup", "kind": "health"},
+                          {"event": "place", "cue": "region_entered",
+                           "region": "ydan:r@30,0,70"},
+                          elapsed=12.0)
+        text = "\n".join(senses.interval_lines(out))
+        self.assertIn("12.0s wall", text)
+        self.assertIn("60 game ticks", text)
+        self.assertIn("hearts: 3.0 -> 2.5", text)
+        self.assertIn("picked up: health x1", text)
+        self.assertIn("trail: ydan:r@30,0,70", text)
+        self.assertIn("damage_taken x1", text)
+        self.assertIn('"kind": "keese"', text)
+        self.assertEqual(senses.interval_lines({}), [])
+
+
 if __name__ == "__main__":
     unittest.main()

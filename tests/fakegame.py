@@ -12,6 +12,7 @@ baiting the lunge does not.
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 import random
@@ -74,6 +75,13 @@ class FakeGame:
         self.worn = 0x11
         self.owned = 0x33
         self.equip_pending = False
+        # The screenshot op (2026-08-07 AgentLink patch): a tiny canned
+        # window, big enough for the wire's shape and the PNG round trip,
+        # small enough to keep the fixture readable. Native is 8x6 and the
+        # default cap folds it to 4x3, so the downscale reporting is
+        # exercised over real pipes too.
+        self.screen_size = (8, 6)
+        self.shot_pending = False
 
     def reset_world(self) -> None:
         self.player = {"x": 0.0, "z": 0.0, "health": 48}  # 3 hearts
@@ -259,6 +267,32 @@ class FakeGame:
         self.overlay_applies += 1
         return {"labels_staged": len(labels)}
 
+    def render_frame(self, max_width: int) -> dict:
+        """The screenshot op's success reply: raw RGBA8, base64, plus BOTH
+        sizes so a downscaled frame can never read as native."""
+        w, h = self.screen_size
+        factor = 1
+        if max_width and w > max_width:
+            factor = -(-w // max_width)
+            while factor > 1 and (w // factor == 0 or h // factor == 0):
+                factor -= 1
+        # A red ramp across the frame — a flipped or misaligned buffer shows
+        # up as wrong pixels rather than as a plausible picture.
+        src = [bytes((i & 0xFF, 0x20, 0x80, 0xFF)) for i in range(w * h)]
+        out = bytearray()
+        for y in range(h // factor):
+            for x in range(w // factor):
+                acc = [0, 0, 0, 0]
+                for sy in range(factor):
+                    for sx in range(factor):
+                        px = src[(y * factor + sy) * w + x * factor + sx]
+                        for c in range(4):
+                            acc[c] += px[c]
+                out += bytes(v // (factor * factor) for v in acc)
+        return {"format": "rgba8", "width": w // factor, "height": h // factor,
+                "full_width": w, "full_height": h,
+                "pixels": base64.b64encode(bytes(out)).decode()}
+
     def handle(self, payload: dict) -> dict:
         res = {"type": "result", "id": payload.get("id"), "status": "success"}
         if payload.get("type") == "command":
@@ -311,6 +345,17 @@ class FakeGame:
                 self.save_pending = False
                 self.saves += 1
                 res["saved"] = True
+        elif op == "screenshot":
+            # Staged like the others: capture lives on the frame hook, and
+            # the real Metal path defers a frame, so the first poll always
+            # answers try_again. Downscaling is the instrument's job (the
+            # wire carries raw RGBA), so the fake box-averages too.
+            if not self.shot_pending:
+                self.shot_pending = True
+                res["status"] = "try_again"
+            else:
+                self.shot_pending = False
+                res.update(self.render_frame(payload.get("max_width", 0)))
         elif op == "assign_c":
             button = payload.get("button", -1)
             if not 0 <= button <= 2:

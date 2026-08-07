@@ -111,8 +111,10 @@ class TestTools(ServerCase):
         self.assertEqual(body["current"], "kill_baba")
         result = self.call_tool("force_state", {"node": "nowhere"})
         self.assertTrue(result["isError"])
-        body = self.tool_body(self.call_tool("resume"))
-        self.assertTrue(body["ok"])
+        # resume BLOCKS as of 0.10.0: with no wake coming, the honest cap
+        # is what returns — and the world keeps running.
+        body = self.tool_body(self.call_tool("resume", {"max_block_s": 0.1}))
+        self.assertTrue(body["no_wake"])
 
     def test_scan(self):
         body = self.tool_body(self.call_tool("scan", {"rays": 8}))

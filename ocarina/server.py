@@ -5,12 +5,21 @@ The core is transport-free (`ServerCore.handle(msg)`) so the whole surface
 is testable without pipes; `main()` wires stdin/stdout, the Sail link, and
 the 20 Hz runtime thread.
 
-Wakes ride MCP channels (verified 2026-07-31): the initialize response
-declares `experimental: {"claude/channel": {}}` and wake packs go out as
+Wake delivery is a plain blocking tool call as of 0.10.0 (SURFACE.md
+"The wake"; dojo docs/31): `resume` unfreezes and blocks, `await_wake`
+listens without resuming, and the wake pack comes back as that call's
+result. Those two verbs run on their own thread (`serve` dispatches
+them there) so a blocked wake-wait cannot starve status/ping/cancel —
+JSON-RPC answers by id, so out-of-order responses are legal. MCP
+cancellation (`notifications/cancelled`) severs the block and writes no
+response; the machine plays on and the next wake parks frozen.
+
+Wakes ALSO ride MCP channels (verified 2026-07-31, demoted to optional
+2026-08-07): the initialize response declares
+`experimental: {"claude/channel": {}}` and wake packs go out as
 `notifications/claude/channel` — `content` lands as the body of a
 `<channel source="ocarina">` block, `meta` keys become tag attributes.
-Delivery queues until the session is idle; harmless here, because
-cognition happens in stopped time.
+A nicety for flag-loaded Claude Code sessions; scored play blocks.
 
 Tools not yet implemented return a clean isError result saying exactly
 what instrument work they wait on — the surface shape is the blessed
@@ -21,14 +30,16 @@ read as "not part of the design", untrue) or a quiet failure (docs/08).
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import MACHINE_FORMAT_VERSION, OCARINA_VERSION, senses
+from . import MACHINE_FORMAT_VERSION, OCARINA_VERSION, screenshot, senses
 from .brainviz import Brainviz
 from .events import EventLog
 from .game import Game
@@ -92,11 +103,14 @@ INSTRUCTIONS = """\
 ocarina is the instrument you play Ocarina of Time through. You act by
 putting a hierarchical state machine in a state, never by pressing
 buttons — the machine is source in this save-file repo (machine/), and
-reload_machine() validates and hot-swaps it. Wake packs arrive as
-<channel source="ocarina"> blocks while the game is FROZEN: read the
-pack, inspect resources, edit the machine if needed, then call resume()
-to unfreeze. Every wake has a declared default that fires if you never
-answer, so the world will not wait forever."""
+reload_machine() validates and hot-swaps it. One call is one act of
+living: while you hold a FROZEN world you read the pack, inspect
+resources, edit the machine if needed, then call resume() — which
+unfreezes and BLOCKS, returning the next wake pack as its result. The
+world only runs while someone is listening. If a resume() was cut
+short, re-attach with await_wake() (never resume() again — it re-runs
+the current node's body). Every wake has a declared default that fires
+if you never answer, so the world will not wait forever."""
 
 
 def _tool(name, description, properties=None, required=None):
@@ -114,8 +128,17 @@ TOOLS = [
           ["node"]),
     _tool("set_directive", "Set the standing intent (feeds wake packs, HUD, telemetry).",
           {"text": {"type": "string"}}, ["text"]),
-    _tool("resume", "Unfreeze the game, back to autopilot. Optional heartbeat override.",
-          {"max_sleep": {"type": "number", "description": "Seconds between heartbeat wakes (stored; heartbeat wake is machine content)."}}),
+    _tool("resume", "Unfreeze the game and BLOCK until the next wake, which "
+                    "is this call's result. One call is one act of living: "
+                    "the world only runs while someone is listening.",
+          {"max_sleep": {"type": "number", "description": "Seconds between heartbeat wakes (stored; heartbeat wake is machine content)."},
+           "max_block_s": {"type": "number", "description": "Cap the block; on expiry returns {no_wake: true, elapsed_s} with the world STILL RUNNING — re-arm with await_wake(), never resume()."}}),
+    _tool("await_wake", "Listen for the next wake WITHOUT resuming (no side "
+                        "effect on machine or game): returns a parked wake "
+                        "at once, blocks while the world runs, errors if a "
+                        "delivered wake is unanswered. The re-attach verb "
+                        "after a severed resume().",
+          {"max_block_s": {"type": "number", "description": "Cap the block; on expiry returns {no_wake: true, elapsed_s}."}}),
     _tool("escalate", "Escalate up the ladder (ultimately to the human; journaled).",
           {"reason": {"type": "string"}}, ["reason"]),
     _tool("scan", "Collision fan around Link — the geometry sense.",
@@ -143,19 +166,27 @@ TOOLS = [
           ["item"]),
     _tool("play_song", "The ocarina interface: choosing the song is the game; note entry is UI mechanics.",
           {"name": {"type": "string"}}, ["name"]),
-    _tool("screenshot", "Vision on demand; a debugging sense, never a stream."),
+    _tool("screenshot", "Vision on demand; a debugging sense, never a stream. "
+                        "Returns the game window's final composited frame as "
+                        "a PNG image block — the debug overlay's labels "
+                        "included, so it shows ocarina's beliefs ON the "
+                        "world's truth.",
+          {"max_width": {"type": "integer",
+                         "description": "Cap the returned width in pixels "
+                                        "(the instrument box-averages down; "
+                                        "0 = native). Default 640."}}),
 ]
 
 #: Tools that exist on the blessed surface but wait on instrument work.
 #: Each maps to what it needs — an honest error beats a silent stub.
 #: (0.8.0 graduated dialogue_choose/save_game/use_item; 0.9.0 graduated
-#: equip and buy. What is left here waits on real UI substrate.)
+#: equip and buy; screenshot graduated on the 2026-08-07 AgentLink patch.
+#: What is left here waits on real UI substrate.)
 NOT_YET = {
     "create_file": "file-select UI navigation not built yet",
     "continue_game": "death-screen UI navigation not built yet",
     "save_and_quit": "save-screen UI navigation not built yet",
     "play_song": "ocarina UI note entry not built yet",
-    "screenshot": "no screenshot op on the wire yet (DojoLink patch needed)",
 }
 
 RESOURCES = [
@@ -198,6 +229,16 @@ _NOT_YET_RESOURCES = {
 }
 
 
+class RequestCancelled(Exception):
+    """The client cancelled a blocked request. MCP says a cancelled
+    request gets no response, so `handle` returns None for it."""
+
+
+#: The verbs that BLOCK on the next wake (0.10.0). `serve` runs them on
+#: their own thread; everything else stays on the read loop.
+BLOCKING_TOOLS = ("resume", "await_wake")
+
+
 class ServerCore:
     """The MCP surface, transport-free. `notify` is called with outbound
     notifications (the channel push); main() points it at stdout."""
@@ -207,6 +248,12 @@ class ServerCore:
         self.runtime = runtime
         self.log = log
         self.notify = lambda method, params: None
+        # Blocked calls by request id, so notifications/cancelled can reach
+        # the awaiter. `_cancelled` is the race the other way: a
+        # cancellation that arrives before its request armed.
+        self._inflight: dict = {}
+        self._cancelled: deque = deque(maxlen=64)
+        self._inflight_lock = threading.Lock()
         runtime.wake_push = self._push_pack
 
     # -- the channel ---------------------------------------------------------
@@ -225,6 +272,7 @@ class ServerCore:
                 lines.append(f"directive: {pack['directive']}")
             lines.append(f"trigger: {json.dumps(pack.get('trigger', {}))}")
             lines.append(f"state: {json.dumps(pack.get('state', {}))}")
+            lines.extend(senses.interval_lines(pack.get("interval") or {}))
             lines.append("recent events:")
             for ev in pack.get("events", []):
                 lines.append("  " + json.dumps(ev))
@@ -250,8 +298,11 @@ class ServerCore:
                 result = {}
             elif method == "tools/list":
                 result = {"tools": TOOLS}
+            elif method == "notifications/cancelled":
+                self._cancel((msg.get("params") or {}).get("requestId"))
+                return None
             elif method == "tools/call":
-                result = self._call_tool(msg.get("params") or {})
+                result = self._call_tool(msg.get("params") or {}, msg_id)
             elif method == "resources/list":
                 result = {"resources": RESOURCES}
             elif method == "resources/templates/list":
@@ -262,6 +313,8 @@ class ServerCore:
                 return None    # unknown notification: ignore
             else:
                 return _rpc_error(msg_id, -32601, f"method not found: {method}")
+        except RequestCancelled:
+            return None      # cancelled requests get no response (MCP)
         except Exception as e:
             if msg_id is None:
                 return None
@@ -284,7 +337,7 @@ class ServerCore:
 
     # -- tools ---------------------------------------------------------------
 
-    def _call_tool(self, params: dict) -> dict:
+    def _call_tool(self, params: dict, msg_id=None) -> dict:
         name = params.get("name")
         args = params.get("arguments") or {}
         if name in NOT_YET:
@@ -295,13 +348,19 @@ class ServerCore:
         if handler is None:
             return _tool_error(f"unknown tool {name!r}")
         try:
-            result = handler(args)
+            result = (handler(args, msg_id) if name in BLOCKING_TOOLS
+                      else handler(args))
         except LinkError as e:
             return _tool_error(f"game link: {e}")
         if isinstance(result, dict) and result.get("ok") is False:
             # Context-legal, not context-mounted: wrong-screen (and
             # wrong-state) calls are clean tool errors.
             return _tool_error(result.get("error", json.dumps(result)))
+        if isinstance(result, dict) and "_content" in result:
+            # The one shape a JSON text block cannot carry: screenshot hands
+            # back real pixels as an MCP image block. Every other tool goes
+            # through _tool_ok, whose single JSON text block is the norm.
+            return {"content": result["_content"], "isError": False}
         return _tool_ok(result)
 
     def _tool_status(self, args) -> dict:
@@ -320,9 +379,67 @@ class ServerCore:
     def _tool_set_directive(self, args) -> dict:
         return self.runtime.set_directive(str(args.get("text", "")))
 
-    def _tool_resume(self, args) -> dict:
+    def _tool_resume(self, args, msg_id=None) -> dict:
         max_sleep = args.get("max_sleep")
-        return self.runtime.resume(None if max_sleep is None else float(max_sleep))
+        return self._blocking(msg_id, lambda on_arm: self.runtime.resume_and_block(
+            None if max_sleep is None else float(max_sleep),
+            _opt_float(args.get("max_block_s")), on_arm=on_arm))
+
+    def _tool_await_wake(self, args, msg_id=None) -> dict:
+        return self._blocking(msg_id, lambda on_arm: self.runtime.await_wake(
+            _opt_float(args.get("max_block_s")), on_arm=on_arm))
+
+    def _blocking(self, msg_id, call) -> dict:
+        """Run one of the blocking verbs with its awaiter registered under
+        this request's id, so notifications/cancelled can sever it. A
+        severed block returns None from the runtime: no answer to write."""
+        try:
+            result = call(self._register(msg_id))
+        finally:
+            self._forget(msg_id)
+        if result is None:
+            raise RequestCancelled()
+        return result
+
+    def _register(self, msg_id):
+        # Lock order, one way only: nothing here calls the runtime while
+        # holding `_inflight_lock` (the runtime calls US, under its own
+        # lock, when it arms an awaiter).
+        def arm(awaiter) -> None:
+            with self._inflight_lock:
+                beaten = msg_id in self._cancelled
+                if beaten:
+                    self._cancelled.remove(msg_id)
+                elif msg_id is not None:
+                    self._inflight[msg_id] = awaiter
+            if beaten:
+                # The cancellation beat the arming: sever on arrival
+                # rather than block for a request nobody is waiting for.
+                self.runtime.cancel_awaiter(awaiter)
+        return arm
+
+    def _forget(self, msg_id) -> None:
+        with self._inflight_lock:
+            self._inflight.pop(msg_id, None)
+
+    def _cancel(self, request_id) -> None:
+        """MCP cancellation: unblock cleanly and let the machine play on —
+        it IS the autopilot (docs/31 ruling 2). The next wake parks frozen
+        with its default armed, and await_wake() re-attaches to it."""
+        with self._inflight_lock:
+            awaiter = self._inflight.pop(request_id, None)
+            if awaiter is None:
+                self._cancelled.append(request_id)
+                return
+        self.runtime.cancel_awaiter(awaiter)
+
+    def sever_all(self) -> None:
+        """The client is gone (stdin closed): unblock every waiting call."""
+        with self._inflight_lock:
+            awaiters = list(self._inflight.values())
+            self._inflight.clear()
+        for awaiter in awaiters:
+            self.runtime.cancel_awaiter(awaiter)
 
     def _tool_escalate(self, args) -> dict:
         return self.runtime.escalate(str(args.get("reason", "")))
@@ -748,6 +865,40 @@ class ServerCore:
                          f"({_BUY_OUTCOME_TIMEOUT_S:.0f}s) — "
                          + _quote_box(self._message())}
 
+    def _tool_screenshot(self, args) -> dict:
+        # The one tool whose result is not JSON text. The instrument sends
+        # raw RGBA8 (libultraship vendors no image encoder and this lane
+        # adds no dependencies); the PNG is made here, stdlib.
+        if not self.game.link.connected:
+            return {"ok": False, "error": "game not connected"}
+        max_width = args.get("max_width")
+        shot = self.game.screenshot(
+            None if max_width is None else int(max_width))
+        if not shot.get("ok"):
+            return shot
+        captured_at = time.time()
+        try:
+            png = screenshot.encode_png(shot["rgba"], shot["width"], shot["height"])
+        except ValueError as e:
+            return {"ok": False, "error": f"could not encode the frame: {e}"}
+        note = {"width": shot["width"], "height": shot["height"],
+                "captured_at": captured_at,
+                "captured_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                 time.gmtime(captured_at)),
+                "png_bytes": len(png)}
+        # The boundary, always (0.6.0's flight lesson: a debug layer shows
+        # what it did NOT give you). A downscaled frame says so by carrying
+        # the native size it was reduced from.
+        if (shot["full_width"], shot["full_height"]) != (shot["width"], shot["height"]):
+            note["downscaled_from"] = f"{shot['full_width']}x{shot['full_height']}"
+        note["includes_debug_overlay"] = True
+        return {"ok": True, "_content": [
+            {"type": "image",
+             "data": base64.b64encode(png).decode("ascii"),
+             "mimeType": "image/png"},
+            {"type": "text", "text": json.dumps(note, indent=1)},
+        ]}
+
     def _tool_save_game(self, args) -> dict:
         # Play_PerformSave behind the pause-legality gate, game-side; the
         # refusal (if any) comes back named. No silent success path exists:
@@ -941,6 +1092,10 @@ class ServerCore:
         return out
 
 
+def _opt_float(value):
+    return None if value is None else float(value)
+
+
 def _tool_ok(body: dict) -> dict:
     return {"content": [{"type": "text", "text": json.dumps(body, indent=1)}],
             "isError": False}
@@ -957,8 +1112,19 @@ def _rpc_error(msg_id, code: int, message: str) -> dict:
 
 # -- transport ----------------------------------------------------------------
 
+def _is_blocking_call(msg: dict) -> bool:
+    return (msg.get("method") == "tools/call"
+            and (msg.get("params") or {}).get("name") in BLOCKING_TOOLS
+            and msg.get("id") is not None)
+
+
 def serve(core: ServerCore, stdin=None, stdout=None) -> None:
-    """Newline-delimited JSON-RPC over stdio. Blocks until stdin closes."""
+    """Newline-delimited JSON-RPC over stdio. Blocks until stdin closes.
+
+    The wake verbs block for as long as the world runs, so they get their
+    own thread and the read loop keeps serving everything else — status,
+    resources, and above all the cancellation that severs the block.
+    Responses are matched by id, so answering out of order is legal."""
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     write_lock = threading.Lock()
@@ -971,17 +1137,31 @@ def serve(core: ServerCore, stdin=None, stdout=None) -> None:
     core.notify = lambda method, params: write(
         {"jsonrpc": "2.0", "method": method, "params": params})
 
-    for line in stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except ValueError:
-            continue
+    def dispatch(msg: dict) -> None:
         response = core.handle(msg)
-        if response is not None:
+        if response is None:
+            return
+        try:
             write(response)
+        except (ValueError, OSError):
+            pass    # stdout closed under a blocked call: the client is gone
+
+    try:
+        for line in stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            if _is_blocking_call(msg):
+                threading.Thread(target=dispatch, args=(msg,), daemon=True,
+                                 name="wake-wait").start()
+            else:
+                dispatch(msg)
+    finally:
+        core.sever_all()
 
 
 def main(argv=None) -> int:

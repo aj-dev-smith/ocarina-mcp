@@ -8,8 +8,8 @@ the MCP handshake over its stdin/stdout, and connects the ported fakegame
 over TCP — the same three processes a real session has.
 """
 
+import base64
 import json
-import queue
 import shutil
 import socket
 import subprocess
@@ -49,7 +49,11 @@ class TestStdioSmoke(unittest.TestCase):
              "--port", str(self.port)],
             cwd=REPO_ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, bufsize=1)
-        self.inbox: queue.Queue = queue.Queue()
+        # Responses are matched by id and kept in a dict, not a queue: as
+        # of 0.10.0 a blocked resume() is answered out of order, and a
+        # queue reader that drops non-matching messages would eat it.
+        self.responses: dict = {}
+        self.arrived = threading.Condition()
         threading.Thread(target=self._reader, daemon=True).start()
         self.next_id = 0
         self.fake = None
@@ -67,26 +71,34 @@ class TestStdioSmoke(unittest.TestCase):
     def _reader(self):
         for line in self.proc.stdout:
             line = line.strip()
-            if line:
-                self.inbox.put(json.loads(line))
+            if not line:
+                continue
+            msg = json.loads(line)
+            if msg.get("id") is None:
+                continue                      # a notification (the channel push)
+            with self.arrived:
+                self.responses[msg["id"]] = msg
+                self.arrived.notify_all()
+
+    def send(self, method, params=None) -> int:
+        self.next_id += 1
+        self.proc.stdin.write(json.dumps(
+            {"jsonrpc": "2.0", "id": self.next_id, "method": method,
+             "params": params or {}}) + "\n")
+        return self.next_id
+
+    def wait_for(self, msg_id, timeout=10.0):
+        deadline = time.monotonic() + timeout
+        with self.arrived:
+            while msg_id not in self.responses:
+                if not self.arrived.wait(max(deadline - time.monotonic(), 0.0)):
+                    raise AssertionError(f"no response to request {msg_id}")
+            msg = self.responses.pop(msg_id)
+        self.assertNotIn("error", msg, msg)
+        return msg["result"]
 
     def rpc(self, method, params=None, timeout=10.0):
-        self.next_id += 1
-        msg_id = self.next_id
-        self.proc.stdin.write(json.dumps(
-            {"jsonrpc": "2.0", "id": msg_id, "method": method,
-             "params": params or {}}) + "\n")
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                msg = self.inbox.get(timeout=deadline - time.monotonic())
-            except queue.Empty:
-                break
-            if msg.get("id") == msg_id:
-                self.assertNotIn("error", msg, msg)
-                return msg["result"]
-            # a notification or stale message; keep looking
-        raise AssertionError(f"no response to {method}")
+        return self.wait_for(self.send(method, params), timeout)
 
     def call_tool(self, name, arguments=None):
         result = self.rpc("tools/call", {"name": name,
@@ -137,6 +149,21 @@ class TestStdioSmoke(unittest.TestCase):
         self.assertEqual(equipped["worn"]["shield"], "hylian_shield")
         self.assertEqual(self.fake.worn, 0x21)
 
+        # 4c. The screenshot sense end to end: raw RGBA8 over the TCP wire,
+        #     PNG'd server-side, handed back as a real MCP image block. The
+        #     fake's native window is 8x6 and the default cap is 640, so
+        #     this one comes back native and claims no downscale.
+        result = self.rpc("tools/call",
+                          {"name": "screenshot", "arguments": {"max_width": 4}})
+        self.assertFalse(result["isError"], result)
+        image, note = result["content"]
+        self.assertEqual(image["mimeType"], "image/png")
+        png = base64.b64decode(image["data"])
+        self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+        body = json.loads(note["text"])
+        self.assertEqual((body["width"], body["height"]), (4, 3))
+        self.assertEqual(body["downscaled_from"], "8x6")
+
         # 5. Autopilot: the fixture behavior runs against the fake at 20 Hz
         #    and the loop transition keeps it running.
         deadline = time.monotonic() + 10
@@ -146,6 +173,32 @@ class TestStdioSmoke(unittest.TestCase):
             saw_behavior = status["behavior_running"] is not None
             time.sleep(0.1)
         self.assertTrue(saw_behavior, "no behavior ever ran end-to-end")
+
+        # 5b. The blocking wake over the real pipes (0.10.0): resume()
+        #     blocks, other requests are still served while it does, and
+        #     the wake pack comes back as that call's own result.
+        resume_id = self.send("tools/call",
+                              {"name": "resume",
+                               "arguments": {"max_block_s": 20}})
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if self.call_tool("status")["listener_blocked"]:
+                break
+            time.sleep(0.1)
+        self.assertTrue(self.call_tool("status")["listener_blocked"],
+                        "resume() did not block")
+        with self.fake.lock:
+            self.fake.player["health"] = 40
+            self.fake.pending_events.append(
+                {"type": "agent_event", "event": "health_change",
+                 "amount": -8, "health": 40})
+        result = self.wait_for(resume_id, timeout=20)
+        pack = json.loads(result["content"][0]["text"])
+        self.assertEqual(pack["transition"], "health-drop")
+        self.assertTrue(pack["frozen"], "the game froze before delivery")
+        self.assertEqual(pack["state"]["hearts"], 2.5)
+        self.assertIn("interval", pack)
+        self.assertTrue(self.call_tool("status")["wake_delivered"])
 
         # 6. The mechanical journal persisted into the save-file repo.
         journal = self.repo / "journal" / "mechanical.jsonl"

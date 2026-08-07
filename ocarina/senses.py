@@ -61,6 +61,11 @@ Known honesty gaps, flagged rather than hidden:
   `normalize_census_distances`. That is an ocarina-side workaround for a
   wire bug, not a sense; it derives nothing the snapshot didn't already
   carry, and it is written to be deleted when the wire is fixed.
+- The interval digest (0.10.0, docs/31) is COMPRESSION, not a sense: it
+  tallies, quotes and two-endpoint-deltas narration that already passed
+  curation on its way into the journal and the digest. It computes
+  nothing about the world neither of those already presented. Its own
+  gaps are flagged on `IntervalDigest` below.
 - The 0.9.0 vocabulary pass (Kokiri route) named twelve actors from the
   id table AHEAD of eyewitness confirmation, which is the 0.3.0 order of
   operations (name, then have AJ look) but leaves a window where a name
@@ -72,6 +77,8 @@ from __future__ import annotations
 
 import json
 import math
+import threading
+import time
 from pathlib import Path
 
 from .place import clock_bearing
@@ -727,3 +734,160 @@ def translate(msg: dict):
     if name in ("frame", "stray_response", "hook_unknown"):
         return None
     return None
+
+
+# -- the interval digest: "while you were out" (0.10.0, dojo docs/31) --------
+
+class IntervalDigest:
+    """The wake pack's compression of the interval since the last wake.
+
+    Blocking delivery (docs/31) means a wake pack lands after an interval
+    the mind did not watch — forty seconds of autopilot, or forty
+    minutes. The raw stream is already in the journal and `oot://events`;
+    this is the same stream folded small enough to read: two-endpoint
+    state deltas, repeat-collapsed tallies, and the firsts quoted whole.
+
+    Fairness: every field here is a tally, a quote, or a delta over
+    narration that ALREADY passed the curation rules on its way into the
+    journal (events) or the digest (state). Nothing is computed about
+    the world that neither of those presented. Honesty gaps, flagged:
+
+    - Items SPENT have no producer: the wire narrates pickups, not
+      purchases, so a purchase shows only as the `rupees` delta.
+    - Distinct journal texts are quoted once per INTERVAL, not once per
+      session: a line that fires every interval is quoted every interval.
+      Within an interval its repeats collapse into the tallies, keyed by
+      transition. (docs/31 says "first-time journal transitions"; read
+      per-interval, because a session-scoped first would leave later
+      intervals with an untexted `journal x3` and no way to drill down
+      but the raw log.)
+    - `ticks` is the LOGIC clock (gameplay_frames), so it counts game
+      time and not the freeze; `wall_s` counts both. The pair is the
+      point — they diverge exactly where cognition was free.
+    - Tallies collapse on (event, kind, behavior, cue, transition). Two
+      behavior_done records with different outcomes land in one bucket;
+      the outcome is in `oot://events`, one query away.
+    """
+
+    #: Digest fields worth a two-endpoint delta. All are HUD counters a
+    #: player watches change; the rest of the digest is "what is", which
+    #: the pack's own `state` block already carries.
+    DELTA_FIELDS = ("scene", "hearts", "hearts_max", "sticks", "nuts",
+                    "rupees")
+
+    #: What distinguishes one tally bucket from another inside a category.
+    KEY_FIELDS = ("kind", "behavior", "cue", "transition")
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._lock = threading.Lock()
+        self.reset()
+
+    def reset(self) -> None:
+        """Start a fresh interval (called at each wake delivery)."""
+        with self._lock:
+            self._started = self._clock()
+            self._first_state = None
+            self._last_state = None
+            self._first_frames = None
+            self._last_frames = None
+            self._tallies: dict = {}
+            self._firsts: list = []
+            self._quoted: set = set()
+            self._trail: list = []
+            self._items: dict = {}
+
+    def note_state(self, digest: dict, frames=None) -> None:
+        """Fold in one curated digest. The FIRST one folded is the
+        interval's baseline — before the game connects there is no
+        snapshot, so the first interval's "from" is the state at connect
+        (docs/31), with no special case for it."""
+        with self._lock:
+            if self._first_state is None:
+                self._first_state = dict(digest)
+                self._first_frames = frames
+            self._last_state = dict(digest)
+            if frames is not None:
+                self._last_frames = frames
+
+    def note_event(self, ev: dict) -> None:
+        """Fold in one recorded event — the EventLog observer hook, so
+        this sees exactly what the journal saw, nothing more."""
+        name = ev.get("event")
+        with self._lock:
+            if name == "spawn" and ev.get("novel"):
+                self._firsts.append(dict(ev))       # a first sighting: verbatim
+                return
+            if name == "journal":
+                text = ev.get("text")
+                if text is not None and text not in self._quoted:
+                    self._quoted.add(text)
+                    self._firsts.append(dict(ev))
+                    return
+            if name == "pickup":
+                kind = ev.get("kind") or "unknown"
+                self._items[kind] = self._items.get(kind, 0) + 1
+                return
+            if name == "place" and ev.get("cue") == "region_entered":
+                region = ev.get("region")
+                if region and (not self._trail or self._trail[-1] != region):
+                    self._trail.append(region)      # consecutive repeats collapse
+                return
+            key = (name,) + tuple(ev.get(f) for f in self.KEY_FIELDS)
+            self._tallies[key] = self._tallies.get(key, 0) + 1
+
+    def render(self) -> dict:
+        """The `interval` section of a wake pack. Empty sections are
+        absent rather than empty: nothing to say, said by not saying it
+        (the digest's absent-entity idiom)."""
+        with self._lock:
+            out = {"wall_s": round(self._clock() - self._started, 1)}
+            if self._first_frames is not None and self._last_frames is not None:
+                out["ticks"] = self._last_frames - self._first_frames
+            first, last = self._first_state or {}, self._last_state or {}
+            delta = {f: {"from": first[f], "to": last[f]}
+                     for f in self.DELTA_FIELDS
+                     if f in first and f in last and first[f] != last[f]}
+            if delta:
+                out["delta"] = delta
+            if self._items:
+                out["items_gained"] = dict(self._items)
+            if self._trail:
+                out["region_trail"] = list(self._trail)
+            events = []
+            for key, count in self._tallies.items():
+                entry = {"event": key[0]}
+                entry.update({f: v for f, v in zip(self.KEY_FIELDS, key[1:])
+                              if v is not None})
+                entry["count"] = count
+                events.append(entry)
+            if events:
+                out["events"] = events
+            if self._firsts:
+                out["firsts"] = [dict(e) for e in self._firsts]
+            return out
+
+
+def interval_lines(interval: dict) -> list:
+    """The interval digest as text — templates over the rendered fields,
+    for the channel push's body (the blocked call gets the JSON)."""
+    if not interval:
+        return []
+    lines = [f"since the last wake: {interval.get('wall_s', 0)}s wall"
+             + (f", {interval['ticks']} game ticks" if "ticks" in interval else "")]
+    for field, span in (interval.get("delta") or {}).items():
+        lines.append(f"  {field}: {span['from']} -> {span['to']}")
+    for kind, count in (interval.get("items_gained") or {}).items():
+        lines.append(f"  picked up: {kind} x{count}")
+    trail = interval.get("region_trail")
+    if trail:
+        lines.append("  trail: " + " -> ".join(trail))
+    for entry in interval.get("events") or []:
+        label = " ".join(str(entry[f]) for f in IntervalDigest.KEY_FIELDS
+                         if f in entry)
+        lines.append(f"  {entry['event']}"
+                     + (f" [{label}]" if label else "")
+                     + f" x{entry['count']}")
+    for ev in interval.get("firsts") or []:
+        lines.append("  first: " + json.dumps(ev))
+    return lines

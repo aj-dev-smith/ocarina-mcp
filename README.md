@@ -39,12 +39,13 @@ and `MACHINE.md` are the blessed contract; ocarina 0.9 implements it —
 the machine loader/validator, guard language, 20 Hz executor with
 preemption, freeze-confirmed wake cycle, the sight-gated sensorium, the
 place sense (a region graph distilled from the game's own collision
-data), dialogue text, game-native saving, shopping, and the stdio MCP
-surface, all tested (`python3 -m unittest discover -s tests -t .`).
+data), dialogue text, game-native saving, shopping, `screenshot()`, and
+the stdio MCP surface, all tested
+(`python3 -m unittest discover -s tests -t .`).
 The latest flight started a fresh save file and played treehouse →
 sword → shield → into the Deku Tree in ~2.5 hours. Tools that still
-wait on instrument work (screenshot, full menu navigation) return
-honest not-yet-implemented errors.
+wait on instrument work (full menu navigation) return honest
+not-yet-implemented errors.
 
 Run it:
 

@@ -86,7 +86,7 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (241; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (306; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame, and
   real-o2r place-sense pins that skip if oot.o2r is absent).
 - Run: `python3 -m ocarina --repo <save-file-repo> --o2r
@@ -138,29 +138,26 @@ silently-never-fires transition shape, twice).
   `oot://state` / `oot://events` and acts through the real tool surface.
   A `tail -f` on the repo's `journal/mechanical.jsonl` (filtering the
   `stand_watch` idle loop) is the live commentary channel.
-  **Wake delivery (settled 2026-08-07: two experiments + the channels
-  reference):** a plain `claude mcp add` registration does NOT deliver
-  channel events — Claude Code silently drops them unless the session
-  loads the server AS A CHANNEL (research-preview allowlist; the
-  documented behavior our fakegame experiment observed: a real
-  identity-mismatch wake pushed, pending, and never rendered). The
-  fix is to start the session with
-  `claude --dangerously-load-development-channels server:ocarina`,
-  after which channel events inject directly and start turns — VERIFY
-  on first use (run the fakegame driver, watch the wake arrive
-  unprompted). Until that's verified, the proven fallback is the
-  journal doorbell: a Monitor event line re-invokes an idle session,
-  so arm exactly ONE Monitor at flight start
-  (`persistent: true`):
+  **Wake delivery (0.10.0, the blocking wake — dojo docs/31, built and
+  LIVE-VERIFIED 2026-08-07):** `resume()` unfreezes and BLOCKS; the
+  next wake pack comes back as that call's tool result, with the
+  `interval` "while you were out" digest. One call is one act of
+  living: the world only runs while someone is listening, so a missed
+  wake is structurally impossible. Plain `claude mcp add` is all the
+  registration needed — no flag, no Monitor. If a `resume()` is ever
+  severed (Esc, timeout, crash), re-attach with `await_wake()` —
+  NEVER a second `resume()`, which re-runs the current node's body
+  (docs/28). `max_block_s` on either verb returns an honest
+  `{no_wake: true}` with the world still running. Historical paths,
+  both still functional: channel push (needs
+  `claude --dangerously-load-development-channels server:ocarina`;
+  live-verified same day, now an optional nicety — a flag-loaded
+  session gets the wake both ways) and the journal Monitor doorbell
+  (ONE Monitor, `persistent: true`, on
   `tail -F -n 0 <repo>/journal/mechanical.jsonl | grep --line-buffered
-  '"event": "wake"\|"event": "escalation"'`
-  — one notification per wake record; then read the wake from the
-  journal record / `oot://events` and answer with `resume()`. NEVER
-  ad-hoc background tails: a backgrounded `tail -f` never exits so
-  never notifies (that is the missed-frozen-game failure), and
-  unfiltered tails wake on stand_watch chatter (that is the
-  spurious-wake storm). `-n 0` and `--line-buffered` are both
-  load-bearing.
+  '"event": "wake"\|"event": "escalation"'` — `-n 0` and
+  `--line-buffered` load-bearing; never ad-hoc background tails).
+  Neither is needed when the mind holds the blocking call.
 - `tools/drive.py` is the hand-drive rig: spawns the server, does the
   MCP handshake, relays JSON commands from a FIFO, logs all traffic
   (wake packs included) to `traffic.jsonl`. It is how a Claude session
@@ -181,7 +178,46 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play after the ninth flight (server at 0.9.0; equip, buy, and dialogue_choose LIVE)
+## State of play (server at 0.10.0; the blocking wake LIVE)
+
+- **0.10.0 — THE BLOCKING WAKE (2026-08-07, dojo docs/31: designed,
+  ratified, built by an Opus 5 agent, reviewed, and live-verified in
+  one session — the same day as the tenth flight).** The morning's
+  fakewake experiment finally live-verified the channel flag; AJ's
+  verdict ("I kind of hate the flag") turned the session into the
+  replacement: wake delivery as a plain blocking MCP call, portable
+  to any client. `resume(max_sleep?, max_block_s?)` unfreezes and
+  BLOCKS, the next wake pack returning as its tool result — the
+  world only runs while someone is listening, so ten flights of
+  dropped pushes become structurally impossible, not mitigated.
+  `await_wake(max_block_s?)` graduates from spec-only to built as
+  the re-attach verb (a severed block must never be re-armed with
+  resume() — docs/28's re-runs-the-body finding). One awaiter at a
+  time; severed block = machine plays on, next wake parks frozen
+  with its default armed; `max_block_s` expiry returns an honest
+  `{no_wake: true}`. The pack grew the **interval digest** ("while
+  you were out": two-endpoint state deltas, repeat-collapsed event
+  tallies, per-interval firsts quoted verbatim, wall + game clocks —
+  compression of already-curated narration, never a new sense;
+  `IntervalDigest` in senses.py flags its own gaps in-file). Blocking
+  verbs run on their own server thread so status/ping/cancel never
+  starve; MCP cancellation severs cleanly, including the
+  cancel-before-arm and cancel-crossing-a-wake races. Contract bump:
+  SURFACE.md amended (docs/31 ratified all four open calls as
+  recommended; the mini-harness deferred to its own design pass).
+  Tests 263 → 288. LIVE-VERIFIED same day, this session: blocking
+  resume returned a real fakewake identity-mismatch pack (interval
+  included, 63.9 s blocked), the flag-loaded session ALSO got the
+  channel push (both-ways confirmed), and both verbs' `no_wake` cap
+  answered honestly. **Screenshot rode the same bump** (backlog #5,
+  built by a second worktree agent the same session, merged on top):
+  the AgentLink `screenshot` op reads framebuffer 0 (Metal's deferred
+  blit is the tested-in-build path — AJ runs Metal; GL implemented,
+  unexercised), raw RGBA8 box-averaged to `max_width` (default 640,
+  both sizes always reported), PNG'd ocarina-side in stdlib
+  `screenshot.py`, returned as a real MCP image block with the
+  overlay's labels in frame (beliefs ON truth, `includes_debug_overlay`
+  stated). Needs the SoH rebuild; live-unexercised. Tests 288 → 306.
 
 - **0.9.0 + THE NINTH FLIGHT (2026-08-05, dojo docs/28 — built in the
   morning, acceptance-flown on a FRESH save file the same day; the
@@ -427,10 +463,15 @@ sixth flight ranked this list by felt pain, docs/26 has the reasoning;
    it is behind the 2F door (the ring chest was the Dungeon Map;
    docs/26 erratum) — and with `save_game` live, what we take now
    KEEPS.
-5. **Screenshot on the wire.** Two AJ screenshots resolved in seconds
-   what probes argued about for minutes (the chest at the vine base;
-   the gap in the vines) — and the eighth flight's chest impasse was
-   again resolved by AJ's eyes. Four flights running.
+5. **Screenshot on the wire — BUILT 2026-08-07** (same session as
+   0.10.0, by a worktree agent; live-unexercised — needs the SoH
+   rebuild, then a real `screenshot()` against the running game).
+   The four-flights-running pain (AJ's eyes resolving what probes
+   argued about) now has a tool: framebuffer 0 with the overlay's
+   labels on it, real pixels as an MCP image block. Metal is the
+   tested-in-build path (AJ's live backend); GL is implemented but
+   unexercised. Requires a Shipwright built after 2026-08-07;
+   an older one answers loudly, never silently.
 6. `bgm_change` producer (enemy battle music on proximity — the game's
    own fair unseen-enemy channel), and **sight-gating for behaviours**
    (`game.actors()` is raw; seek.py filters the `sighted` bit by hand —
@@ -458,11 +499,10 @@ registered ocarina with plain `claude mcp add`, which never loads it
 as a CHANNEL, so its pushes were silently dropped by documented
 research-preview behavior — that is the whole mystery of AJ typing
 "wake" by hand (second light's round-trip was drive.py, a custom
-client, which is why it worked). Properly loaded
-(`--dangerously-load-development-channels server:ocarina`), channel
-events inject and start turns; first live verification pending. The
-Monitor doorbell (proven to wake an idle session) is the fallback;
-see "Playing it directly".
+client, which is why it worked). The flag was live-verified the same
+morning — and AJ's verdict on it ("I kind of hate the flag") produced
+0.10.0's blocking wake the same afternoon, which retires the question
+entirely; see the 0.10.0 state-of-play entry and rule 7.
 
 ## Rules for this repo
 
@@ -495,25 +535,25 @@ see "Playing it directly".
    repo. The server's live state is never the only copy. The 20 Hz leaves
    are called **behaviors** — never "skills", which means Claude Code
    SKILL.md artifacts only.
-7. **Wake transport is MCP channels** (freeze-confirmed first, then push;
-   round-tripped live with a watching client as of second light — 3
-   wakes, 0 freeze failures). A long-poll `await_wake` fallback exists
-   in the spec for non-Claude clients but is not built. Platform facts
-   (corrected TWICE on 2026-08-07 — experiment, then the channels
-   reference doc): channel delivery requires the session to load the
-   server AS A CHANNEL. Channels are a research preview with an
-   allowlist; a server registered with plain `claude mcp add` gets its
-   `notifications/claude/channel` events SILENTLY DROPPED (documented
-   behavior — this is why every flight's wakes went nowhere and AJ
-   typed "wake" by hand). Loaded properly, channel events inject
-   directly into the session and START TURNS (AJ's daily Telegram
-   channel is the precedent). For ocarina that means starting the
-   session with
-   `claude --dangerously-load-development-channels server:ocarina`.
-   First live verification of that flag is pending; until it passes,
-   the journal-Monitor doorbell in "Playing it directly" is the
-   proven fallback. Resources cannot be subscribed to.
+7. **Wake transport is the blocking call** (0.10.0, dojo docs/31,
+   ratified by AJ and live-verified 2026-08-07). Freeze-confirmed
+   first, always; then the pack returns as the result of the blocked
+   `resume()`/`await_wake()` — plain MCP, portable to any client, no
+   research preview. One awaiter at a time (loud error, never a
+   queue); a severed block leaves the machine playing on (it is the
+   autopilot) and the next wake parks frozen with its default armed —
+   pending_wake demoted from normal path to crash recovery. Wake
+   defaults are unchanged: blocking guarantees a LISTENING mind hears
+   every wake; defaults remain the answer to a dead one. Channels
+   survive as an optional Claude Code nicety (the push carries the
+   same single-sourced pack; requires the
+   `--dangerously-load-development-channels server:ocarina` flag —
+   research preview, allowlist, silently dropped without it, which
+   was the whole ten-flight missed-wake mystery). Scored play
+   specifies the blocking path. Resources cannot be subscribed to.
 8. **Not-yet-built surface stays honest.** Tools/resources awaiting
-   instrument work (dialogue text, menu navigation, screenshot) are
-   registered and return explicit not-yet errors naming what they wait
-   on (`NOT_YET` in server.py). Never quietly stub one.
+   instrument work (file-select/death/save-screen UI navigation,
+   ocarina note entry) are registered and return explicit not-yet
+   errors naming what they wait on (`NOT_YET` in server.py). Never
+   quietly stub one. (0.8.0 graduated dialogue text; 0.9.0 equip and
+   buy; 2026-08-07 screenshot.)

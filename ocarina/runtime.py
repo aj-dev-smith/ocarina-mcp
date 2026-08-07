@@ -5,7 +5,15 @@ module owns the 20 Hz loop: draining the wire, translating it through the
 sensorium, dispatching transitions (innermost-out, first match wins,
 cooldowns consumed at match time), sweeping `when` guards on the
 false→true edge, running leaf behaviors on the executor, and the wake
-cycle (preempt → freeze-confirmed → channel push → resume/deadline).
+cycle (preempt → freeze-confirmed → delivery → resume/deadline).
+
+Wake DELIVERY is blocking as of 0.10.0 (SURFACE.md "The wake"; dojo
+docs/31): `resume_and_block()` unfreezes and blocks, `await_wake()`
+listens without resuming, and the wake pack is the return value of
+whichever one was listening. One awaiter at a time, never a queue. A
+wake nobody is blocked on parks exactly as it always did — frozen, its
+declared default armed — which is the crash-recovery path `await_wake()`
+re-attaches to. The channel push rides along unchanged.
 
 Freeze machinery is ported from the workshop warden (docs/08 §14: the
 pause op's reply cannot be trusted; prove the logic clock stopped).
@@ -70,6 +78,25 @@ class _PendingWake:
     started: float
 
 
+@dataclass
+class _Awaiter:
+    """One blocked `resume()`/`await_wake()` call — the single listener
+    the contract allows (docs/31: one awaiter at a time, a loud error,
+    never a queue). `severed` is a cancelled request or a stopping
+    server: the call unwinds and the machine plays on."""
+    event: threading.Event
+    pack: Optional[dict] = None
+    severed: bool = False
+
+
+def _busy_error() -> dict:
+    return {"ok": False,
+            "error": "another resume()/await_wake() is already blocked on "
+                     "the next wake — one awaiter at a time (the wake goes "
+                     "to whoever is listening, and two listeners is two "
+                     "minds). Let that call return, or cancel it."}
+
+
 class MachineRuntime:
     def __init__(self, game: Game, repo: Path | str, log: EventLog,
                  wake_push: Optional[Callable[[dict], None]] = None,
@@ -115,6 +142,14 @@ class MachineRuntime:
         self._edges: dict = {}          # when-transition name -> last value
         self._warned: set = set()       # (transition, warning) journaled once
         self._wake: Optional[_PendingWake] = None
+        self._wake_pack: Optional[dict] = None   # the parked pack, for a
+                                                 # re-attaching await_wake()
+        self._wake_delivered = False    # handed to a caller? (holding the ball)
+        self._awaiter: Optional[_Awaiter] = None
+        #: "While you were out" (docs/31): fed from the SAME event stream
+        #: the journal sees, so it can only compress what was narrated.
+        self.interval = senses.IntervalDigest()
+        log.observers.append(self.interval.note_event)
         self._pending_start = False     # start current leaf's behavior when free
         self._behavior_node: Optional[str] = None   # the leaf the running body
                                                     # belongs to (see _finish_behavior)
@@ -204,6 +239,13 @@ class MachineRuntime:
 
     def stop(self) -> None:
         self._stopping = True
+        awaiter = self._awaiter
+        if awaiter is not None:
+            self.cancel_awaiter(awaiter)   # a blocked call must not outlive us
+        try:
+            self.log.observers.remove(self.interval.note_event)
+        except ValueError:
+            pass
         with self._lock:
             if self._wake is not None:
                 self._record({"event": "diagnostic",
@@ -500,6 +542,10 @@ class MachineRuntime:
             except LinkError:
                 return
         digest = self._digest()
+        # The interval digest's state endpoints come from the digest the
+        # sweep already computed — the same curated numbers the mind
+        # reads, never a second reading of the world.
+        self.interval.note_state(digest, self._frames())
 
         fired_transition = None
         for t in self._scope():
@@ -609,22 +655,34 @@ class MachineRuntime:
         # its wall clock into a timeout it didn't earn.
         self.executor.preempt(f"wake {t.name}")
         frames, paused = self._freeze()
+        digest = self._digest()
+        self.interval.note_state(digest, frames if frames is not None
+                                 else self._frames())
         pack = {
             "reason": reason,
             "transition": t.name,
             "node": self.current,
             "directive": self.directive,
-            "state": self._digest(),
+            "state": digest,
             "events": self.log.tail(15),
             "trigger": {k: v for k, v in event.items() if k not in ("seq", "wall")},
             "frozen": paused,
+            "interval": self.interval.render(),
         }
+        # The interval closes with the pack it is reported in; the `wake`
+        # record below therefore opens the NEXT one, which is where it
+        # belongs — it is the first thing that happened while the mind
+        # held the ball.
+        self.interval.reset()
         self._wake = _PendingWake(
             transition=t.name, reason=reason, default=t.default,
             deadline=time.monotonic() + self.wake_deadline_s,
             frames_at_pause=frames, paused=paused, started=time.monotonic())
+        self._wake_pack = pack
+        self._wake_delivered = False
         self._record({"event": "wake", "transition": t.name, "reason": reason,
                       "frozen": paused})
+        self._deliver(pack)
         if self.wake_push is not None:
             try:
                 self.wake_push(pack)
@@ -644,6 +702,8 @@ class MachineRuntime:
                               f"({self.wake_deadline_s:.0f}s) — taking default: "
                               f"{default.verb} {default.arg}"})
         self._wake = None
+        self._wake_pack = None
+        self._wake_delivered = False
         self._unfreeze(wake)
         if default.verb == "goto":
             self._enter(default.arg, reason=f"wake default ({wake.transition})")
@@ -653,7 +713,8 @@ class MachineRuntime:
         self._pending_start = True
 
     def resume(self, max_sleep: Optional[float] = None) -> dict:
-        """The resume() tool: unfreeze, back to autopilot."""
+        """The unfreeze half of the resume() tool: back to autopilot, no
+        blocking. `resume_and_block` is what the surface calls."""
         with self._lock:
             if max_sleep is not None:
                 self.heartbeat_s = float(max_sleep)
@@ -661,6 +722,8 @@ class MachineRuntime:
                 return {"ok": True, "note": "nothing was frozen; autopilot already running"}
             wake = self._wake
             self._wake = None
+            self._wake_pack = None
+            self._wake_delivered = False
             self._unfreeze(wake)
             self._record({"event": "diagnostic",
                           "text": f"resume after wake [{wake.transition}] "
@@ -668,6 +731,110 @@ class MachineRuntime:
             self._pending_start = True
             return {"ok": True, "resumed_from": wake.transition,
                     "current": self.current}
+
+    # -- blocking delivery (0.10.0, docs/31) -----------------------------------
+
+    def _deliver(self, pack: dict) -> None:
+        """Hand the pack to the blocked call, if one is listening. Nobody
+        listening is not an error: the wake parks frozen with its default
+        armed (today's machinery, demoted to crash recovery) and the next
+        `await_wake()` collects it."""
+        awaiter = self._awaiter
+        if awaiter is None:
+            return
+        self._awaiter = None
+        self._wake_delivered = True
+        awaiter.pack = pack
+        awaiter.event.set()
+
+    def _claim_awaiter(self) -> Optional[_Awaiter]:
+        """Claim the single listener slot (caller holds the lock); None
+        when one is already blocked."""
+        if self._awaiter is not None:
+            return None
+        self._awaiter = _Awaiter(event=threading.Event())
+        return self._awaiter
+
+    def _block(self, awaiter: _Awaiter,
+               max_block_s: Optional[float]) -> Optional[dict]:
+        """Wait for the wake. Returns its pack, an honest `no_wake` on the
+        block cap (the world KEEPS RUNNING — re-arm with await_wake), or
+        None when the block was severed (cancelled request, stopping
+        server): the caller has gone, so there is no answer to write."""
+        started = time.monotonic()
+        awaiter.event.wait(None if max_block_s is None else float(max_block_s))
+        with self._lock:
+            if self._awaiter is awaiter:
+                self._awaiter = None
+            if awaiter.severed:
+                if awaiter.pack is not None:
+                    # The cancellation and the wake crossed: nobody heard
+                    # the pack, so put it back on the hook — the wake stays
+                    # parked with its default armed and await_wake() can
+                    # still collect it.
+                    self._wake_delivered = False
+                return None
+        if awaiter.pack is not None:
+            return awaiter.pack
+        return {"no_wake": True,
+                "elapsed_s": round(time.monotonic() - started, 1),
+                "note": "no wake within max_block_s; the world is still "
+                        "running — re-arm with await_wake(), never resume() "
+                        "(it would re-run the current node's body)"}
+
+    def resume_and_block(self, max_sleep: Optional[float] = None,
+                         max_block_s: Optional[float] = None,
+                         on_arm=None) -> Optional[dict]:
+        """The resume() tool (0.10.0): unfreeze, then BLOCK until the next
+        wake and return its pack. The listener is claimed BEFORE the
+        unfreeze, so a wake that fires the same instant still has someone
+        to go to. `on_arm` (the server's) is handed the awaiter under the
+        lock, so a cancellation can reach it."""
+        with self._lock:
+            awaiter = self._claim_awaiter()
+            if awaiter is None:
+                return _busy_error()
+            self.resume(max_sleep)
+            if on_arm is not None:
+                on_arm(awaiter)
+        return self._block(awaiter, max_block_s)
+
+    def await_wake(self, max_block_s: Optional[float] = None,
+                   on_arm=None) -> Optional[dict]:
+        """The await_wake() tool (0.10.0): listen WITHOUT resuming — no
+        side effect on the machine or the game. A parked wake comes back
+        at once; a running world blocks; a wake already delivered and
+        unanswered is a loud error, because that caller is holding the
+        ball, not waiting for it."""
+        with self._lock:
+            if self._wake is not None:
+                wake = self._wake
+                if self._wake_delivered:
+                    return {"ok": False,
+                            "error": f"wake [{wake.transition}] "
+                                     f"({wake.reason}) was already delivered "
+                                     f"and is unanswered — the game is FROZEN "
+                                     f"and you are holding the ball, not "
+                                     f"waiting for it. Answer it with "
+                                     f"resume()."}
+                self._wake_delivered = True
+                return dict(self._wake_pack or {})
+            awaiter = self._claim_awaiter()
+            if awaiter is None:
+                return _busy_error()
+            if on_arm is not None:
+                on_arm(awaiter)
+        return self._block(awaiter, max_block_s)
+
+    def cancel_awaiter(self, awaiter: _Awaiter) -> None:
+        """Sever a blocked call (MCP cancellation, dead client, shutdown).
+        The machine plays on — it IS the autopilot (docs/31 ruling 2);
+        the next wake parks frozen with its default armed."""
+        with self._lock:
+            awaiter.severed = True
+            if self._awaiter is awaiter:
+                self._awaiter = None
+        awaiter.event.set()
 
     # -- verbs from the surface ------------------------------------------------
 
@@ -783,6 +950,8 @@ class MachineRuntime:
                 "directive": self.directive,
                 "frozen": self._wake is not None,
                 "pending_wake": self._wake.transition if self._wake else None,
+                "wake_delivered": self._wake_delivered,
+                "listener_blocked": self._awaiter is not None,
                 "wakes": self.wakes,
                 "freeze_failures": self.freeze_failures,
                 "heartbeat_s": self.heartbeat_s,

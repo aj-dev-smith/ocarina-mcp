@@ -20,6 +20,8 @@ game runs at 20 Hz realtime).
 
 from __future__ import annotations
 
+import base64
+import binascii
 import math
 import threading
 import time
@@ -922,6 +924,56 @@ class Game:
             {"type": "agent", "op": "equip_gear",
              "equip_type": int(equip_type), "value": int(value)},
             timeout, patch="2026-08-05")
+
+    #: Default cap on the returned frame's width. The wire carries RAW
+    #: RGBA8 (nothing in libultraship vendors an image encoder, and this
+    #: lane adds no dependencies), so a retina frame is tens of megabytes
+    #: of base64 on a null-delimited TCP pipe. The instrument box-averages
+    #: down to this and reports BOTH sizes, so a reduced frame can never
+    #: read as native.
+    SCREENSHOT_MAX_WIDTH = 640
+
+    def screenshot(self, max_width: Optional[int] = None,
+                   timeout: float = 5.0) -> dict:
+        """The final composited frame, RGBA8, as {width, height, rgba, ...}.
+
+        Staged onto the frame hook like save/assign/equip — capture has to
+        happen where the renderer lives — so this polls try_again through
+        the shared helper. On Metal the screen readback is deferred by one
+        frame by design (a blit encoded at EndFrame, read the frame after),
+        which is exactly what try_again already means here.
+
+        What comes back is framebuffer 0: ImGui and the debug overlay's
+        nametags included, deliberately. This is a DEBUGGING sense, and
+        ocarina's beliefs superimposed on the world's truth is the most
+        diagnostic single image the instrument can produce.
+        """
+        if max_width is None:
+            max_width = self.SCREENSHOT_MAX_WIDTH
+        res = self._poll_staged_op(
+            {"type": "agent", "op": "screenshot", "max_width": int(max_width)},
+            timeout, patch="2026-08-07")
+        if not res.get("ok"):
+            return res
+        fmt = res.get("format")
+        if fmt != "rgba8":
+            return {"ok": False,
+                    "error": f"instrument returned an unknown frame format "
+                             f"{fmt!r} (this ocarina reads 'rgba8')"}
+        try:
+            rgba = base64.b64decode(res.get("pixels", ""), validate=True)
+        except (ValueError, binascii.Error) as e:
+            return {"ok": False, "error": f"frame payload is not valid base64: {e}"}
+        width, height = int(res.get("width", 0)), int(res.get("height", 0))
+        if len(rgba) != width * height * 4:
+            # Never encode a short buffer into a plausible-looking image.
+            return {"ok": False,
+                    "error": f"frame payload is {len(rgba)} bytes, not the "
+                             f"{width * height * 4} a {width}x{height} RGBA "
+                             f"frame needs"}
+        return {"ok": True, "rgba": rgba, "width": width, "height": height,
+                "full_width": int(res.get("full_width", width)),
+                "full_height": int(res.get("full_height", height))}
 
     def z_target(self) -> None:
         self.press("Z", frames=4)

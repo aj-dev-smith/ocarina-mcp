@@ -13,6 +13,14 @@ base). Adds the place principle pair below, the `oot://place` resource,
 the `place` event category, the `place.*` digest section, the bearings
 rider, and the `traverse` behavior primitive (MACHINE.md).
 
+**Amended 2026-08-07 (ocarina 0.10.0): THE BLOCKING WAKE** — dojo
+docs/31, ratified by AJ the same day ("lets implement"; the fakewake
+channel verification that morning is the evidence base). `resume()`
+now BLOCKS and returns the next wake pack; `await_wake()` is promoted
+from spec-only to built (the re-attach verb); the wake pack gains the
+interval digest; channels demote to an optional Claude Code transport.
+See "The wake" below.
+
 ## The goal (AJ, verbatim in spirit)
 
 1. Enable inputs via the behavior machine.
@@ -89,7 +97,9 @@ false→true edge) — validated: whitelisted guard expressions, load-checked
 the curated sensorium, so "presented, not computed" binds the machine
 layer too. Leaves = **behaviors**, deterministic 20 Hz scripts, preempted
 at game-op boundaries when a transition leaves them. Wake transitions
-(`wake_mind`) freeze the game and push a channel message. The repo
+(`wake_mind`) freeze the game and deliver the wake pack as the return
+value of the blocked `resume()`/`await_wake()` call (0.10.0; a channel
+push rides along for flag-loaded Claude Code sessions). The repo
 declares; the server runs; `reload_machine` is the only bridge.
 On connect, the server rehydrates from the repo — live state is never the
 only copy.
@@ -103,7 +113,8 @@ Machine + mind verbs:
 | `reload_machine()` | validate + hot-swap the machine from repo source; returns diagnostics |
 | `force_state(node)` | jump the machine now |
 | `set_directive(text)` | standing intent (feeds wake packs, HUD, telemetry) |
-| `resume(max_sleep?)` | unfreeze, back to autopilot; optional heartbeat override |
+| `resume(max_sleep?, max_block_s?)` | unfreeze and BLOCK; returns the next wake pack (0.10.0). Optional heartbeat override; optional block cap returning honest `no_wake` |
+| `await_wake(max_block_s?)` | listen WITHOUT resuming (0.10.0): returns a parked wake immediately, blocks if the world is running, errors if a delivered wake is unanswered. The re-attach verb after a severed block — never re-arm with `resume()` (it re-runs the node's body) |
 | `escalate(reason)` | up the ladder (ultimately to the human; journaled) |
 
 UI verbs (per the UI principle; the mind chooses, the server does the
@@ -171,25 +182,52 @@ the world changing — cues `region_entered`, `fell`.)
 Example: `{"event": "telegraph", "actor": "deku_baba#3", "cue": "rearing",
 "t": 48212}`.
 
-## The wake (MCP channels)
+## The wake (blocking delivery — 0.10.0, dojo docs/31)
 
-Verified 2026-07-31 (research preview; needs org enablement + the
-`--dangerously-load-development-channels` flag for now): local stdio
-servers can push `notifications/claude/channel`; payloads land in the
-session context as `<channel source="ocarina">` blocks; delivery is
-queue-until-idle, grouped, no mid-turn interrupts (harmless here —
-cognition happens in stopped time, so no game events fire mid-think).
+Wake delivery is a **plain blocking MCP tool call**: the mind, holding
+a frozen world, thinks and acts via the verbs, then calls `resume()`.
+The world unfreezes and runs; the call blocks. The next wake —
+transition, escalation, heartbeat, any of them — freezes the game
+(**freeze-confirmed first**, unchanged) and returns the wake pack **as
+the result of the blocked call**. One call is one act of living. The
+world only runs while someone is listening, so a wake cannot fire into
+silence — the missed-wake failure is structurally impossible, not
+mitigated. A blocked call costs nothing while blocked; portable to any
+MCP client; no research-preview flag, no session required.
 
-Flow: `wake_mind` transition → **freeze-confirmed first** → channel push
-with the wake pack (reason, state digest, event tail, current node,
-directive) → idle session wakes → thinks → acts via the verbs → `resume`
-unfreezes. The skeleton wake set (shipped by navi, game-agnostic):
-health drop, novel actor, dialogue, stuck, heartbeat. Everything else the
-mind wires as it learns what matters.
+The wake pack: reason, state digest, event tail, current node,
+directive, and (0.10.0) the **interval digest** — a compression of the
+interval since the last wake in the narration layer's own voice: state
+delta (hearts, rupees, region trail, items), repeat-collapsed event
+tallies, novel firsts quoted verbatim, wall/game clocks. Fairness: the
+digest summarizes narration that already passed curation; it computes
+nothing the journal didn't present. Raw events stay in `oot://events`.
 
-**Portability fallback (spec only, not built now):** a degenerate
-long-poll `await_wake()` tool so non-Claude MCP clients can play. Channels
-are the Claude-native path.
+Rules (ratified with docs/31):
+- **One awaiter at a time.** A second concurrent `resume()`/
+  `await_wake()` is a loud error, never a queue.
+- **Severed block** (cancellation, client crash, timeout): the machine
+  plays on — it IS the autopilot — and the next wake parks frozen as
+  `pending_wake` with the wake's declared default armed, exactly
+  today's machinery, demoted from normal path to crash recovery.
+  Re-attach with `await_wake()`, never `resume()` (docs/28:
+  resume-after-wake re-runs the current node's body).
+- **Honest cap.** Both verbs take optional `max_block_s`; on expiry
+  they return `{"no_wake": true, "elapsed_s": …}` and the client
+  re-arms with `await_wake()`. For clients with short MCP timeouts;
+  Claude Code's stdio default (~28 h) never sees it.
+- Wake **defaults** are unchanged: blocking guarantees a listening
+  mind hears every wake; defaults remain the answer to a dead one.
+
+The skeleton wake set (shipped by navi, game-agnostic): health drop,
+novel actor, dialogue, stuck, heartbeat. Everything else the mind
+wires as it learns what matters.
+
+**Channels (demoted 2026-08-07 to optional transport):** a Claude Code
+session started with `--dangerously-load-development-channels
+server:ocarina` also receives each wake as a channel push
+(live-verified 2026-08-07). A nicety for interactive sessions; scored
+play specifies the blocking path.
 
 ## Versioning (decided 2026-08-01)
 
