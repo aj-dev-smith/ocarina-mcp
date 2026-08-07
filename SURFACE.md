@@ -33,6 +33,20 @@ diagnostic. The `game_loaded` environment cue carries the game's own
 `file` (0-based fileNum) — presented since the post-tenth-flight fix;
 this amendment blesses it.
 
+**Amended 2026-08-07 (ocarina 0.12.0): THE DEV HARNESS** — dojo
+docs/33, direction and rule amendment ratified by AJ the same evening
+("Yes lets do it. And lets amend the rule."; nine flights of discovery
+work done in front of the camera are the evidence base). ONE principle
+bullet changes (Benchmark purity, below): under an explicit
+`--dev-tools` server flag a `dev_*` tool family exists for harness
+development and live e2e testing. Server-layer only — MACHINE.md is
+untouched, and that is the design property, not an accident: the
+behavior interface and machine source can never name a cheat in any
+mode. Dev use is journaled permanently (a `dev_mode` banner per
+boot/attach, a `dev_cheat` line per call) and refused outright on a
+repo declaring `"scored": true` in identity.json. Savestates stay
+absent in every mode.
+
 ## The goal (AJ, verbatim in spirit)
 
 1. Enable inputs via the behavior machine.
@@ -90,11 +104,19 @@ computes every event; detection is free via GameInteractor hooks.
   play, exactly as savestates are — the lab pipeline is dev tooling.
 - **No pad verb. Ever.** The mind acts only by machine states; behaviors
   act at 20 Hz inside the server.
-- **Benchmark purity.** No savestate/load, no trial-drill, no merge-gate
-  tools on this surface — not gated, ABSENT. Game-native saving only
-  (it's a menu function). Crash recovery = relaunch + load last save,
-  like a human. (Savestate machinery exists only as dev tooling in the
-  workshop repo, for instrument validation.)
+- **Benchmark purity.** No savestate/load, no trial-drill, no
+  merge-gate tools on the PLAY surface — not gated, ABSENT: the
+  behavior interface and machine source can never name a practice
+  verb, in any mode. Game-native saving only (it's a menu function).
+  Crash recovery = relaunch + load last save, like a human.
+  **Dev harness (amended 2026-08-07, dojo docs/33, ratified by AJ):**
+  under an explicit `--dev-tools` server flag, a `dev_*` tool family
+  (warp, teleport, and successors) exists for harness development and
+  live e2e testing — server-layer only, never behavior-reachable,
+  every use journaled in the repo's permanent record, refused outright
+  on repos declaring `"scored": true`. Savestates remain absent in
+  every mode. Scored play requires the flag off, and the journal
+  proves it.
 - **Coverage leads the frontier.** Sense completeness is required one
   region ahead of the player, not globally.
 

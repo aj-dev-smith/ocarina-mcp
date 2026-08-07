@@ -60,13 +60,46 @@ class StubLink:
         #: failure paths (unknown op, backend refusal, short payload).
         self.screenshot_size = (4, 3)
         self.screenshot_script: list = []
+        #: The dev harness ops (docs/33, `--dev-tools` only): staged like
+        #: save/equip_gear and scriptable for the refusal paths. The
+        #: entrance table holds real indices (soh entrance_table.h)
+        #: against this stub's one world; `warp_delay_polls` is how many
+        #: state reads pass before the scene actually becomes the new
+        #: one, so the arrival poll is exercised rather than assumed.
+        self.dev_sent: list = []
+        self.teleport_script: list = []
+        self.warp_script: list = []
+        self.entrance_table = {529: 85, 0: 0, 626: 52}
+        self.warp_delay_polls = 1
+        self.floor_y = 0.0              # a teleport below the floor snaps up
+        self._warp_pending = None       # (scene, polls_left)
+        #: The DEV_FW_PATCH half (0.12.2): teleport rides the game's own
+        #: Farore's Wind respawn path, so it STAGES a scene reload like a
+        #: warp — the reply is the respawn record's word at staging time
+        #: (requested position, resolved room and yaw), and the world
+        #: arrives `warp_delay_polls` state reads later with `loads`
+        #: ticked. `entrance_index` is the save's current entranceIndex:
+        #: put it outside the table to model the -19 refusal (Link
+        #: standing in a grotto/shop return, with no entrance to respawn
+        #: through).
+        self._teleport_pending = None   # (pos, room, yaw, polls_left)
+        self.entrance_index = 529
+        self.entrance_max = 1556        # the game's ENTR_MAX
+        #: The DEV_ROOM_PATCH half (the evening live pass): the state
+        #: carries `loads` (bumped on EVERY play-state init, same-scene
+        #: reloads included) and `room`, and teleport takes a room. A
+        #: test models an OLD instrument by deleting `world["loads"]` /
+        #: `world["room"]` — the counter is only bumped if it is there,
+        #: so the deletion stays deleted.
+        self.rooms = (0, 1, 2)          # this stub's one scene's rooms
         #: Called with (payload, self) on every pad op — how a test scripts
         #: a shop: the game answers a stick nudge or an A press by moving
         #: the message box on, exactly as En_Ossan's state machine does.
         self.pad_hook = None
         # Mutable world the tests poke at; merged into every state reply.
         self.world = {
-            "save_loaded": True, "scene": 85, "health": 48,
+            "save_loaded": True, "scene": 85, "loads": 1, "room": 0,
+            "health": 48,
             "health_capacity": 48, "sticks": 0, "nuts": 0, "rupees": 0,
             "msg_mode": 0, "camera_yaw": 0, "focus_actor": 0,
             "player": {"pos": [0.0, 0.0, 0.0], "yaw": 0, "speed_xz": 0.0,
@@ -88,6 +121,21 @@ class StubLink:
         """Tests inject wire messages (agent_event / hook shapes) here."""
         self._events.append(msg)
 
+    def _stage_teleport(self, payload: dict) -> tuple:
+        """Write the respawn record and start the reload clock. Returns
+        the (position, room, yaw) it resolved — room and yaw default to
+        where Link is, which is what the real op does."""
+        pos = [float(payload.get(k, 0.0)) for k in ("x", "y", "z")]
+        pos[1] = max(pos[1], self.floor_y)      # the game's floor snap
+        room = payload.get("room")
+        if room is None:
+            room = self.world.get("room", 0)
+        yaw = payload.get("yaw")
+        if yaw is None:
+            yaw = self.world["player"].get("yaw", 0)
+        self._teleport_pending = (pos, room, yaw, self.warp_delay_polls)
+        return pos, room, yaw
+
     def request(self, payload: dict, timeout: float = 5.0) -> dict:
         self.requests.append(payload)
         self.frame += 1
@@ -96,6 +144,35 @@ class StubLink:
         res = {"type": "result", "status": "success"}
         op = payload.get("op")
         if op == "state":
+            if self._warp_pending is not None:
+                # The scene load lands a few reads later: an arrival that
+                # were instant would let a broken poll pass.
+                scene, left = self._warp_pending
+                if left <= 0:
+                    self.world["scene"], self._warp_pending = scene, None
+                    # Play state init: the counter ticks even when the
+                    # entrance led back into the scene we were in.
+                    if "loads" in self.world:
+                        self.world["loads"] += 1
+                    if "room" in self.world:
+                        self.world["room"] = 0
+                else:
+                    self._warp_pending = (scene, left - 1)
+            if self._teleport_pending is not None:
+                # A teleport is a scene reload too now: the world becomes
+                # the respawn record a few reads later, and the play-state
+                # counter ticks exactly as it does for a door.
+                pos, room, yaw, left = self._teleport_pending
+                if left <= 0:
+                    self._teleport_pending = None
+                    self.world["player"]["pos"] = list(pos)
+                    self.world["player"]["yaw"] = yaw
+                    if "loads" in self.world:
+                        self.world["loads"] += 1
+                    if "room" in self.world:
+                        self.world["room"] = room
+                else:
+                    self._teleport_pending = (pos, room, yaw, left - 1)
             res.update(self.world)
             res["paused"] = self.paused
             res["frame"] = self.frame
@@ -153,5 +230,52 @@ class StubLink:
                 equips["worn"] = (worn & ~(0xF << (t * 4))) | (v << (t * 4))
                 if t == 0:
                     equips["b"] = (0x3B, 0x3C, 0x3D)[v - 1]
+        elif op == "teleport":
+            self.dev_sent.append(dict(payload))
+            scripted = (self.teleport_script.pop(0) if self.teleport_script
+                        else None)
+            room = payload.get("room")
+            if scripted is not None:
+                res.update(scripted)
+                if res.get("status", "success") == "success":
+                    # A scripted success is still a STAGED reload: the op
+                    # answers now, the world arrives later.
+                    self._stage_teleport(payload)
+            elif not 0 <= self.entrance_index < self.entrance_max:
+                # -19: the save's entranceIndex is a grotto/shop return
+                # sentinel, so there is no entrance to respawn through.
+                res["status"] = "failure"
+                res["code"] = -19
+                res["error"] = (
+                    f"entrance out of range: the current entrance index "
+                    f"0x{self.entrance_index:04X} is outside the entrance "
+                    f"table (0-{self.entrance_max - 1})")
+            elif room is not None and room not in self.rooms:
+                res["status"] = "failure"
+                res["code"] = -18
+                res["error"] = (f"no room {room} in this scene "
+                                f"(valid rooms are 0-{max(self.rooms)})")
+            else:
+                pos, resolved_room, yaw = self._stage_teleport(payload)
+                # Staging-time truth: the requested position (the floor
+                # snap happens on arrival, in the world) plus the room and
+                # yaw actually written into the respawn record.
+                res.update({"x": float(payload.get("x", 0.0)),
+                            "y": float(payload.get("y", 0.0)),
+                            "z": float(payload.get("z", 0.0)),
+                            "room": resolved_room, "yaw": yaw})
+        elif op == "warp":
+            self.dev_sent.append(dict(payload))
+            scripted = self.warp_script.pop(0) if self.warp_script else None
+            entrance = payload.get("entrance")
+            if scripted is not None:
+                res.update(scripted)
+            elif entrance not in self.entrance_table:
+                res["status"] = "failure"
+                res["error"] = f"no such entrance {entrance}"
+            else:
+                self._warp_pending = (self.entrance_table[entrance],
+                                      self.warp_delay_polls)
+                res.update({"entrance": entrance, "staged": True})
         # events / tick / hud: accepted, no-op
         return res

@@ -30,7 +30,16 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-class TestStdioSmoke(unittest.TestCase):
+class StdioCase(unittest.TestCase):
+    """The three-process rig: a real `python -m ocarina` subprocess, a
+    real MCP conversation over its pipes, and the ported fakegame ready
+    to dial in over TCP. Subclasses add `EXTRA_ARGS` (the dev harness
+    boots the same rig with `--dev-tools`) — one copy of the plumbing,
+    so a transport fix can never fix only half the tests."""
+
+    #: Extra argv for the server under test.
+    EXTRA_ARGS: tuple = ()
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.repo = Path(self.tmp) / "save-file"
@@ -46,7 +55,7 @@ class TestStdioSmoke(unittest.TestCase):
         self.port = free_port()
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "ocarina", "--repo", str(self.repo),
-             "--port", str(self.port)],
+             "--port", str(self.port), *self.EXTRA_ARGS],
             cwd=REPO_ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, bufsize=1)
         # Responses are matched by id and kept in a dict, not a queue: as
@@ -105,6 +114,25 @@ class TestStdioSmoke(unittest.TestCase):
                                          "arguments": arguments or {}})
         return json.loads(result["content"][0]["text"])
 
+    def start_fake(self, timeout=10.0):
+        """Dial the fakegame in over real TCP, like SoH does, and block
+        until the server says it is connected."""
+        from .fakegame import FakeGame
+        self.fake = FakeGame(port=self.port)
+        threading.Thread(target=self.fake.run, daemon=True).start()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.call_tool("status")["game_connected"]:
+                return self.fake
+            time.sleep(0.2)
+        raise AssertionError("the fakegame never connected")
+
+    def journal(self):
+        path = self.repo / "journal" / "mechanical.jsonl"
+        return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+class TestStdioSmoke(StdioCase):
     def test_full_stack(self):
         # 1. MCP handshake over the real pipes.
         init = self.rpc("initialize", {"protocolVersion": "2025-06-18"})
@@ -118,16 +146,8 @@ class TestStdioSmoke(unittest.TestCase):
         self.assertFalse(status["game_connected"])
 
         # 3. The fakegame dials in over real TCP, like SoH does.
-        from .fakegame import FakeGame
-        self.fake = FakeGame(port=self.port)
-        threading.Thread(target=self.fake.run, daemon=True).start()
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            status = self.call_tool("status")
-            if status["game_connected"]:
-                break
-            time.sleep(0.2)
-        self.assertTrue(status["game_connected"])
+        self.start_fake()
+        self.assertTrue(self.call_tool("status")["game_connected"])
 
         # 4. The sensorium reads the live world through the wire. The
         #    enemy fields are sight-gated: the baba enters the digest only
@@ -201,10 +221,12 @@ class TestStdioSmoke(unittest.TestCase):
         self.assertTrue(self.call_tool("status")["wake_delivered"])
 
         # 6. The mechanical journal persisted into the save-file repo.
-        journal = self.repo / "journal" / "mechanical.jsonl"
-        self.assertTrue(journal.exists())
-        events = [json.loads(l) for l in journal.read_text().splitlines()]
+        events = self.journal()
         self.assertTrue(any(e["event"] == "entered" for e in events))
+        # …and carries no dev mark: this server ran the default surface.
+        self.assertFalse([e for e in events
+                          if e["event"] in ("dev_mode", "dev_cheat")])
+        self.assertNotIn("dev_mode", self.call_tool("status"))
 
 
 if __name__ == "__main__":

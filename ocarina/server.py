@@ -36,10 +36,11 @@ import sys
 import threading
 import time
 from collections import deque
+from functools import partial
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import MACHINE_FORMAT_VERSION, OCARINA_VERSION, screenshot, senses
+from . import MACHINE_FORMAT_VERSION, OCARINA_VERSION, dev, screenshot, senses
 from .brainviz import Brainviz
 from .events import EventLog
 from .game import Game
@@ -243,10 +244,16 @@ class ServerCore:
     """The MCP surface, transport-free. `notify` is called with outbound
     notifications (the channel push); main() points it at stdout."""
 
-    def __init__(self, game: Game, runtime: MachineRuntime, log: EventLog):
+    def __init__(self, game: Game, runtime: MachineRuntime, log: EventLog,
+                 dev_tools: "dev.DevTools | None" = None):
         self.game = game
         self.runtime = runtime
         self.log = log
+        #: The dev harness (0.12.0, docs/33), or None. None is the
+        #: default surface and it must stay byte-identical to a server
+        #: that has never heard of dev mode: the verbs are not listed,
+        #: not stubbed, and not dispatchable.
+        self.dev = dev_tools
         self.notify = lambda method, params: None
         # Blocked calls by request id, so notifications/cancelled can reach
         # the awaiter. `_cancelled` is the race the other way: a
@@ -297,7 +304,7 @@ class ServerCore:
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": TOOLS}
+                result = {"tools": self.tools()}
             elif method == "notifications/cancelled":
                 self._cancel((msg.get("params") or {}).get("requestId"))
                 return None
@@ -337,6 +344,13 @@ class ServerCore:
 
     # -- tools ---------------------------------------------------------------
 
+    def tools(self) -> list:
+        """The advertised surface. Without `--dev-tools` this is exactly
+        the blessed list — the dev verbs are ABSENT, not stubbed (rule
+        8's NOT_YET pattern is for blessed-but-unbuilt surface, which
+        dev tools are not: docs/33 ratified call 2)."""
+        return TOOLS if self.dev is None else TOOLS + dev.TOOLS
+
     def _call_tool(self, params: dict, msg_id=None) -> dict:
         name = params.get("name")
         args = params.get("arguments") or {}
@@ -344,7 +358,19 @@ class ServerCore:
             return _tool_error(f"{name} is on the surface but not yet "
                                f"implemented in ocarina {OCARINA_VERSION}: "
                                f"{NOT_YET[name]}")
-        handler = getattr(self, f"_tool_{name}", None)
+        if name in dev.TOOL_NAMES:
+            if self.dev is None:
+                # Absent means absent: a server without the flag does not
+                # know this verb, and says so in the same words it uses
+                # for a typo.
+                return _tool_error(f"unknown tool {name!r}")
+            # The mark lands BEFORE the op runs, so a call that fails —
+            # or crashes the process — still leaves its trace in the
+            # permanent record (docs/33 commitment 2).
+            self.log.record(dev.cheat_event(name, args))
+            handler = partial(self.dev.call, name)
+        else:
+            handler = getattr(self, f"_tool_{name}", None)
         if handler is None:
             return _tool_error(f"unknown tool {name!r}")
         try:
@@ -368,6 +394,12 @@ class ServerCore:
         st.update({"ocarina_version": OCARINA_VERSION,
                    "machine_format_version": MACHINE_FORMAT_VERSION,
                    "repo": str(self.runtime.repo)})
+        if self.dev is not None:
+            # Only under the flag: the default surface is unchanged, and
+            # the presence of this key IS the report (docs/33 commitment
+            # 2 — scored play requires the flag off, and the journal and
+            # this line both prove it).
+            st["dev_mode"] = True
         return st
 
     def _tool_reload_machine(self, args) -> dict:
@@ -1185,7 +1217,24 @@ def main(argv=None) -> int:
                         help="serve the brain viewer (lab/brainviz) on this "
                              "local port — a one-way debug view of the live "
                              "machine, off by default")
+    parser.add_argument("--dev-tools", action="store_true",
+                        help="register the dev_* harness verbs (warp, "
+                             "teleport) for harness development and live "
+                             "e2e tests. Server layer only — never "
+                             "behavior-reachable; every call is journaled; "
+                             "refused outright on a repo declaring "
+                             "\"scored\": true. Off (the default) = the "
+                             "verbs are ABSENT")
     args = parser.parse_args(argv)
+
+    if args.dev_tools:
+        # Commitment 3, before anything is constructed and long before
+        # any connection: a scored repo refuses the flag, loudly.
+        refusal = dev.scored_refusal(args.repo)
+        if refusal is not None:
+            print(f"ocarina: REFUSING to start with --dev-tools — {refusal}",
+                  file=sys.stderr)
+            return 2
 
     link = GameLink(host=args.host, port=args.port)
     game = Game(link)
@@ -1193,7 +1242,15 @@ def main(argv=None) -> int:
     runtime = MachineRuntime(game, args.repo, log,
                              wake_deadline_s=args.wake_deadline,
                              place=PlaceSense(args.o2r))
-    core = ServerCore(game, runtime, log)
+    dev_tools = dev.DevTools(game) if args.dev_tools else None
+    core = ServerCore(game, runtime, log, dev_tools=dev_tools)
+    if dev_tools is not None:
+        # The banner is the first line of this boot's journal, and the
+        # runtime re-journals it on every attach (a repo's fossil must
+        # carry the mark for every world it touched under the flag).
+        log.record(dev.banner_event("boot"))
+        runtime.dev_banner = dev.banner_event("connect")
+        print(f"ocarina: {dev.STARTUP_TEXT}", file=sys.stderr)
 
     viz = None
     if args.brainviz is not None:

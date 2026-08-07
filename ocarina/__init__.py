@@ -187,7 +187,69 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: image block: actual pixels to the mind's vision, a debugging sense,
 #: never a stream. An old instrument answers "rebuild SoH", never a
 #: silent stub.
-OCARINA_VERSION = "0.11.0"
+#: 0.12.0: THE DEV HARNESS (dojo docs/33, direction + rule amendment
+#: ratified by AJ 2026-08-07). The missing rung of the test pyramid:
+#: under an explicit `--dev-tools` server flag, a `dev_*` family
+#: (`dev_warp` through the game's own entrance table, `dev_teleport`
+#: in-scene) makes live e2e testing at a CHOSEN world state possible —
+#: warp to the maze, teleport to the corridor mouth, assert, repeat, in
+#: minutes instead of a flight. A contract bump: SURFACE.md's benchmark
+#: purity bullet amended; MACHINE.md untouched, which is the design
+#: property that keeps it honest. Three structural commitments, not
+#: promises: (1) the verbs live at the server/MCP layer only — `game.py`
+#: grows nothing, so no behavior, guard or machine can name a cheat in
+#: ANY mode (`ocarina/dev.py` holds the wire calls and the server holds
+#: it only under the flag); (2) dev use is un-hideable — a `dev_mode`
+#: banner journals on every boot and attach, every call journals
+#: `dev_cheat` with its arguments BEFORE it runs, and status() reports
+#: dev_mode, so an audit is one grep of the repo's permanent record;
+#: (3) a repo declaring `"scored": true` in identity.json REFUSES to
+#: start under the flag, loudly, before any connection. Without the
+#: flag the dev verbs are ABSENT — not registered, not NOT_YET-stubbed,
+#: invisible; the default surface is byte-identical to 0.11.0's.
+#: Savestates remain absent in every mode; that door is not reopened.
+#: 0.12.1: the first live pass's two seams, fixed the same evening (no
+#: contract touch — the dev harness is server-layer, and SURFACE.md's
+#: amended purity bullet is unchanged). (1) `dev_warp` to an entrance
+#: leading back into the CURRENT scene performs the whole reload, but
+#: the arrival watch compared scene ids and sat there until it timed
+#: out on a warp that had already worked; arrival is now the
+#: instrument's `loads` counter (every play-state init ticks it, same
+#: scene or not), with the old scene watch kept as a fallback that
+#: DIAGNOSES itself in the reply and in the timeout error — an old
+#: instrument is answered loudly, never silently (0.6.0). (2) rooms
+#: only load through the door/holl actors, so a `dev_teleport` across a
+#: room boundary left the destination's geometry and actors unloaded
+#: (Kokiri Forest is three rooms); the verb takes an optional `room`
+#: that makes the game perform a real room change first, surfaces the
+#: game's out-of-range refusal by name, and reports the room the world
+#: ended in. Both ride the same-evening AgentLink patch
+#: (`dev.DEV_ROOM_PATCH`): `loads` and `room` on the state payload, a
+#: `room` argument on the teleport op. tests/live grows the two pins.
+#: 0.12.2: `dev_teleport` rebuilt on the game's own Farore's Wind
+#: respawn machinery, from the second live pass of the same day (no
+#: contract touch — the dev harness is server-layer). A raw position
+#: write moved Link and left the CAMERA wedged in the geometry it was
+#: looking through, which is not a world anyone can debug against; the
+#: instrument's op now STAGES a real scene reload through the respawn
+#: record, so the room loads, its actors respawn, temp flags ride along
+#: and the camera arrives WITH Link — a door transition in all but
+#: name. Ocarina follows: the op's success reply is staging-time truth
+#: (the requested position plus the room and yaw the record resolved,
+#: defaults filled from where Link is), arrival is the `loads` counter
+#: exactly as it is for warp (one shared arrival watch behind both
+#: verbs now), and the position reported is the world's after the load.
+#: New optional `yaw` (int16 binang) sets the facing on arrival. The
+#: game's -19 refusal — the save's entranceIndex is a grotto/shop
+#: return sentinel, so there is no entrance to respawn through — is
+#: surfaced by name like -18, without dressing it up as a room problem.
+#: An instrument whose state carries no `loads` is REFUSED rather than
+#: fallen back on (`dev.DEV_FW_PATCH`): it predates this teleport too,
+#: so its reply is an echo with no arrival to check it against, and
+#: trusting it would report a full-fidelity arrival that never
+#: happened. Rides the same SoH rebuild as the screenshot blit gating,
+#: which needed no ocarina change.
+OCARINA_VERSION = "0.12.2"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

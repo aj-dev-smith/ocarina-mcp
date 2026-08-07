@@ -150,6 +150,15 @@ class MachineRuntime:
                                                     # seen (attach: unverifiable)
         self._identity_slot_missing = False  # a load arrived WITHOUT `file`
 
+        #: The dev harness's journal banner (0.12.0, docs/33), or None.
+        #: main() hands it over when `--dev-tools` is on; the runtime
+        #: only JOURNALS it, on every attach — the rehydrate path is
+        #: exactly where a mark gets lost, and dev mode's whole honesty
+        #: claim is that the fossil carries it for every world touched
+        #: under the flag. The runtime knows nothing else about dev
+        #: mode, and no machine or behavior can reach it.
+        self.dev_banner: Optional[dict] = None
+
         self._lock = threading.RLock()
         self._cooldowns: dict = {}      # transition name -> monotonic last-match
         self._edges: dict = {}          # when-transition name -> last value
@@ -362,6 +371,8 @@ class MachineRuntime:
         self._was_connected = connected
         self._record({"event": "diagnostic",
                       "text": "game connected" if connected else "game disconnected"})
+        if connected and self.dev_banner is not None:
+            self._record(dict(self.dev_banner))
         # Every attach arms the identity check — the rehydrate gap
         # (docs/32): a mid-flight reconnect never fires load_game, and
         # the wrong-file hour began under exactly that blindness. No

@@ -82,9 +82,47 @@ class FakeGame:
         # exercised over real pipes too.
         self.screen_size = (8, 6)
         self.shot_pending = False
+        # The dev harness ops (docs/33; --dev-tools only). Both are
+        # STAGED, like save/equip_gear. The entrance "table" holds real
+        # indices (soh entrance_table.h) against this fake's one room,
+        # so a test reads like the live one: 529 is Kokiri Forest, which
+        # is where the fake already is (the same-scene case a scene
+        # comparison genuinely cannot observe), 0 is Inside the Deku
+        # Tree, 626 is Link's house. `warp_delay_s = None` is the honest
+        # never-arrives path (the op accepts, the world does not move).
+        # `loads` and `room` are the DEV_ROOM_PATCH half (the same
+        # evening's live pass): loads ticks on EVERY play-state init, so
+        # a warp back into the current scene is observable, and teleport
+        # takes an optional room because rooms only load through door
+        # actors.
+        self.scene = 85
+        self.entrance_table = {529: 85, 0: 0, 626: 52}
+        self.warp_delay_s = 0.5
+        self.warps: list = []
+        self.teleports: list = []
+        self.teleport_rooms: list = []  # the room arg per teleport (or None)
+        self.teleport_pending = False
+        self.warp_pending = False
+        self._warp_at = None
+        self._warp_scene = None
+        self.loads = 1
+        self.room = 0
+        self.yaw = 0
+        self.rooms = (0, 1, 2)          # like Kokiri Forest's three
+        # The DEV_FW_PATCH half (0.12.2): teleport rides the game's own
+        # Farore's Wind respawn path, so it STAGES a real scene reload
+        # like a warp — the reply is the respawn record's word at staging
+        # time and the world arrives a beat later with `loads` ticked.
+        # `entrance_index` is the save's current entranceIndex; outside
+        # the table it is the -19 refusal (a grotto/shop return, with no
+        # entrance to respawn through).
+        self._teleport_at = None
+        self._teleport_to = None        # (pos, room, yaw)
+        self.entrance_index = 529
+        self.entrance_max = 1556        # the game's ENTR_MAX
 
     def reset_world(self) -> None:
-        self.player = {"x": 0.0, "z": 0.0, "health": 48}  # 3 hearts
+        self.player = {"x": 0.0, "y": 0.0, "z": 0.0, "health": 48}  # 3 hearts
         self.baba = {"x": 0.0, "z": 300.0, "health": 2, "state": BABA_IDLE,
                      "timer": 0, "alive": True}
         self.slash_cooldown = 0
@@ -113,6 +151,23 @@ class FakeGame:
         if self.paused:
             return
         self.gameplay_frames += 1
+        # A staged warp becomes the new scene a beat later, like a real
+        # scene load: the op's "staged" answer is never the arrival.
+        if self._warp_at is not None and time.time() >= self._warp_at:
+            self.scene, self._warp_at = self._warp_scene, None
+            # Play state init: the counter ticks whether or not the scene
+            # id is a different number, and the arrival room is 0.
+            self.loads += 1
+            self.room = 0
+        # A staged teleport lands the same way — it IS a scene reload,
+        # through the respawn record rather than the entrance table.
+        if self._teleport_at is not None and time.time() >= self._teleport_at:
+            pos, room, yaw = self._teleport_to
+            self._teleport_at, self._teleport_to = None, None
+            self.player["x"], self.player["z"] = pos[0], pos[2]
+            self.player["y"] = max(pos[1], 0.0)      # the fake's floor
+            self.room, self.yaw = room, yaw
+            self.loads += 1
         p, b = self.player, self.baba
 
         if p["health"] <= 0:
@@ -195,11 +250,14 @@ class FakeGame:
                     "drawn": True, "sighted": True,
                 })
             state = {
-                "save_loaded": True, "scene": 85, "health": max(p["health"], 0),
+                "save_loaded": True, "scene": self.scene,
+                "loads": self.loads, "room": self.room,
+                "health": max(p["health"], 0),
                 "health_capacity": 48, "magic": 0, "rupees": 0, "is_child": True,
                 "msg_mode": 0, "paused": self.paused, "frame": self.frame,
                 "gameplay_frames": self.gameplay_frames,
-                "player": {"pos": [p["x"], 0.0, p["z"]], "yaw": 0,
+                "player": {"pos": [p["x"], p.get("y", 0.0), p["z"]],
+                           "yaw": self.yaw,
                            "speed_xz": 0.0,
                            "state_flags1": PLAYER_STATE1_DEAD if dead else 0,
                            "state_flags2": 0, "invincibility": 0},
@@ -356,6 +414,85 @@ class FakeGame:
             else:
                 self.shot_pending = False
                 res.update(self.render_frame(payload.get("max_width", 0)))
+        elif op == "teleport":
+            # The dev harness's respawn-path teleport (docs/33, rebuilt
+            # 0.12.2). STAGED like save/equip_gear — the respawn record is
+            # written on the frame hook — so the first poll answers
+            # try_again, and the success reply is STAGING-time truth: the
+            # requested position plus the room and yaw actually written.
+            # Arrival is a scene reload away, which is what the ocarina
+            # side polls the world's `loads` counter for.
+            coords = [payload.get(k) for k in ("x", "y", "z")]
+            room, yaw = payload.get("room"), payload.get("yaw")
+            if self._warp_at is not None or self._teleport_at is not None:
+                res["status"] = "failure"
+                res["error"] = "a scene transition is already in progress"
+            elif not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                         for v in coords):
+                res["status"] = "failure"
+                res["error"] = "teleport needs numeric x, y and z"
+            elif not 0 <= self.entrance_index < self.entrance_max:
+                # -19: no entrance to respawn through (a grotto or shop
+                # return sentinel), so the whole op is meaningless here.
+                res["status"] = "failure"
+                res["code"] = -19
+                res["error"] = (
+                    f"entrance out of range: the current entrance index "
+                    f"0x{self.entrance_index:04X} is outside the entrance "
+                    f"table (0-{self.entrance_max - 1})")
+            elif room is not None and (not isinstance(room, int)
+                                       or isinstance(room, bool)
+                                       or room not in self.rooms):
+                # The room refusal is BY NAME, with the range: only the
+                # game knows how many rooms this scene has.
+                res["status"] = "failure"
+                res["code"] = -18
+                res["error"] = (f"no room {room} in this scene "
+                                f"(valid rooms are 0-{max(self.rooms)})")
+            elif not self.teleport_pending:
+                self.teleport_pending = True
+                res["status"] = "try_again"
+            else:
+                self.teleport_pending = False
+                with self.lock:
+                    self.teleports.append([float(v) for v in coords])
+                    self.teleport_rooms.append(room)
+                    # Room and yaw default to where Link is; both go into
+                    # the respawn record, which is what the reply echoes.
+                    resolved_room = self.room if room is None else room
+                    resolved_yaw = self.yaw if yaw is None else int(yaw)
+                    self._teleport_to = ([float(v) for v in coords],
+                                         resolved_room, resolved_yaw)
+                    self._teleport_at = time.time() + (self.warp_delay_s or 0.0)
+                    res.update({"x": float(coords[0]), "y": float(coords[1]),
+                                "z": float(coords[2]), "room": resolved_room,
+                                "yaw": resolved_yaw})
+        elif op == "warp":
+            # Staged too, and answering only that the transition was
+            # REQUESTED: arrival is a scene load away, which is what the
+            # ocarina side polls the world for.
+            entrance = payload.get("entrance")
+            if self._warp_at is not None or self._teleport_at is not None:
+                res["status"] = "failure"
+                res["error"] = "a scene transition is already in progress"
+            elif (not isinstance(entrance, int) or isinstance(entrance, bool)
+                    or not 0 <= entrance < 1556):
+                res["status"] = "failure"
+                res["error"] = "entrance must be an index in [0, 1556)"
+            elif entrance not in self.entrance_table:
+                res["status"] = "failure"
+                res["error"] = f"no such entrance 0x{entrance:04X}"
+            elif not self.warp_pending:
+                self.warp_pending = True
+                res["status"] = "try_again"
+            else:
+                self.warp_pending = False
+                with self.lock:
+                    self.warps.append(entrance)
+                    if self.warp_delay_s is not None:
+                        self._warp_scene = self.entrance_table[entrance]
+                        self._warp_at = time.time() + self.warp_delay_s
+                res.update({"entrance": entrance, "staged": True})
         elif op == "assign_c":
             button = payload.get("button", -1)
             if not 0 <= button <= 2:

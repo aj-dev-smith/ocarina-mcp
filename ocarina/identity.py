@@ -39,6 +39,12 @@ is volatile (the mind re-equips at will), so it never belongs in a
 monotone fingerprint. (Backlog #2's nibble-order theory is separately
 unsupported by source — docs/32 §4 records the evidence.)
 
+0.12.0 (docs/33) parks one more declaration here, deliberately: a repo
+may say `"scored": true`, which is what `--dev-tools` refuses to start
+against. It is NOT a fingerprint fact and no part of the identity check
+reads it — identity.json is simply the one place a repo already says
+what this line IS, and a second declaration file would split identity.
+
 Read-only in the benchmark sense: this module reads state dicts and
 the repo's own identity.json. No .sav is ever opened, at any point,
 for any reason. It observes and it judges; choosing the file stays a
@@ -82,6 +88,18 @@ class Identity:
     fingerprint: dict = field(default_factory=dict)
     journal_only: list = field(default_factory=list)
     problems: list = field(default_factory=list)
+    #: The dev-harness gate (0.12.0, docs/33 commitment 3): a repo that
+    #: declares itself scored refuses `--dev-tools` outright. It lives
+    #: here because identity.json is already the repo's
+    #: declaration-of-what-this-line-is (ratified call 3) — a second
+    #: declaration file would split identity. Nothing in the identity
+    #: CHECK reads it; it is not a fingerprint fact.
+    scored: Optional[bool] = None
+    scored_problem: Optional[str] = None
+    #: Did the file parse as a JSON object at all? A declaration nobody
+    #: can read cannot answer the scored question either — which is
+    #: refusal territory for the flag, not a shrug.
+    readable: bool = True
 
     @property
     def broken(self) -> bool:
@@ -110,10 +128,20 @@ def load_identity(repo: Path) -> Optional[Identity]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         ident.problems.append(f"{path.name} unreadable: {type(e).__name__}: {e}")
+        ident.readable = False
         return ident
     if not isinstance(raw, dict):
         ident.problems.append(f"{path.name} is not a JSON object")
+        ident.readable = False
         return ident
+
+    scored = raw.get("scored")
+    if scored is None or isinstance(scored, bool):
+        ident.scored = scored
+    else:
+        ident.scored_problem = (f"'scored' must be true or false, got "
+                                f"{scored!r}")
+        ident.problems.append(ident.scored_problem)
 
     slot = raw.get("save_slot")
     if slot is not None and not isinstance(slot, int):

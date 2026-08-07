@@ -180,6 +180,30 @@ silently-never-fires transition shape, twice).
 
 ## State of play (server at 0.11.0; boot identity LIVE-VERIFIED)
 
+- **THE NAV PROGRAM (2026-08-07 — FULLY RATIFIED, all three docs,
+  all open calls as recommended: AJ, late that night, "ok both fully
+  ratified with your recommended approaches").** The nav conversation
+  (AJ's flight testimony: wall-grinding, corner slides, the house
+  table, the boulder maze) produced a three-doc program, built in
+  order: **docs/33** the dev harness (0.12.0 — BUILT and
+  LIVE-VERIFIED the same night, see below); **docs/30** route-aware
+  walking (0.13.0, NEXT TO BUILD: server-side A* over the loaded
+  mesh with clearance as a combat-safety requirement, instant
+  zero-movement refusals, `walk_to`/`reachable` on the behavior
+  interface; the training-area maze is the acceptance mission;
+  backlog #3 rides along; developed against `tests/live/`);
+  **docs/34** the discovery grain (0.14.0: fog of war mirroring the
+  game's own photographed predicate — overworld full-at-entry,
+  dungeons room+floor presence-gated, Map/Compass widen, frontier
+  legs "destination unknown", refusals never name undiscovered
+  regions, discovery persisted per save line). AJ's fairness line,
+  now doctrine: knowledge in the head is fair; geometry in the hand
+  must be earned. In flight same night: **0.12.1** — the wire grows
+  a `loads` play-state-init counter + current `room` on the state
+  payload and an optional `room` arg on the teleport op (fixes the
+  live-found same-scene warp timeout and the cross-room teleport
+  glitch; the `room` field doubles as docs/34's presence signal).
+
 - **0.11.0 — BOOT IDENTITY (2026-08-07 evening, dojo docs/32:
   designed, all four open calls ratified by AJ, and built in one
   sitting — the same day as 0.10.0 and the tenth flight).** Backlog
@@ -572,9 +596,20 @@ entirely; see the 0.10.0 state-of-play entry and rule 7.
    bodies — that equivalence is the point, and second light proved it
    (deku_baba_v4 ran unmodified but for import lines).
 4. **Stdlib-only.**
-5. **No practice tools on this surface, ever.** Not gated — absent, all
-   the way down: `game.py` has no savestate methods and no `console()`.
-   Game-native saves only.
+5. **No practice tools on the PLAY surface, ever** (amended by AJ,
+   2026-08-07 — dojo docs/33, the dev harness). Absent all the way
+   down at the layer that plays: `game.py` has no savestate methods
+   and no `console()`, behaviors and machine source can never name a
+   practice verb, game-native saves only. AMENDMENT: under an
+   explicit `--dev-tools` server flag, a `dev_*` MCP tool family
+   (warp, teleport, successors) exists for harness development and
+   live e2e testing (`tests/live/`) — server-layer only, never
+   behavior-reachable, every use journaled permanently (boot banner +
+   per-call events), refused outright on repos declaring
+   `"scored": true` in identity.json. Savestates stay absent in EVERY
+   mode. The SURFACE.md Benchmark-purity bullet carries the same
+   amendment at the 0.12.0 build (docs/33 has the ratified text).
+   Scored play requires the flag off, and the journal proves it.
 6. **The machine is source in the save-file repo.** Ocarina runs it;
    `reload_machine()` validates + hot-swaps; connect rehydrates from the
    repo. The server's live state is never the only copy. The 20 Hz leaves
