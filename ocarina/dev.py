@@ -66,6 +66,13 @@ DEV_PATCH = "2026-08-07"
 #: asked for at all.
 DEV_ROOM_PATCH = "2026-08-07 (evening)"
 
+#: The fourth patch (2026-08-07, the same night — the docs/34 rider):
+#: the state payload carries the `dungeon_items` row for dungeon-indexed
+#: scenes (map/compass/boss_key/small_keys, by the game's own
+#: gSaveContext.mapIndex), and the `give_dungeon_item` op sets one of
+#: those bits — the dev grant criterion 4's Map-widening test needs.
+DEV_GIVE_PATCH = "2026-08-07 (dungeon-items rider)"
+
 #: The third patch, from the same day's second live pass (0.12.2): a raw
 #: position write leaves the CAMERA wedged in the geometry it was looking
 #: through, so `teleport` was rebuilt on the game's own Farore's Wind
@@ -123,9 +130,17 @@ def _tool(name, description, properties=None, required=None):
                             "required": required or []}}
 
 
-#: The phase-1 slate (docs/33). Phase 2 (give_item, set_health,
-#: set_time) lands with the first live test that needs it — the slate
-#: grows evidence-first, like the sensorium does.
+#: What dev_give_item may grant. Dungeon items ONLY, deliberately: the
+#: first live test that needed a grant (docs/34 criterion 4 — does the
+#: Dungeon Map widen `oot://place` to outlines and no further?) needs
+#: exactly these, and the slate grows evidence-first. A general
+#: give-anything verb waits for a test that needs one.
+GIVE_ITEMS = ("map", "compass", "boss_key")
+
+#: The phase-1 slate (docs/33). Phase 2 grows evidence-first, like the
+#: sensorium does: dev_give_item landed 2026-08-07 with the docs/34
+#: criterion-4 live test, dungeon items only; set_health / set_time /
+#: general give_item still wait for the first live test to need them.
 TOOLS = [
     _tool("dev_teleport",
           "DEV HARNESS (--dev-tools, journaled): put Link at a place in "
@@ -166,6 +181,18 @@ TOOLS = [
                         "description": "Entrance index (the game's own "
                                        "entrance table)."}},
           ["entrance"]),
+    _tool("dev_give_item",
+          "DEV HARNESS (--dev-tools, journaled): grant a dungeon item "
+          "for the CURRENT dungeon — the game's own dungeonItems bit, "
+          "on the row Map_Init resolved for this scene (a boss arena "
+          "credits its parent dungeon). Dungeon items only; refuses by "
+          "name outside a dungeon-indexed scene. The reply carries the "
+          "state's dungeon_items row read back AFTER the grant — the "
+          "read-back is the proof, never the op's word.",
+          {"item": {"type": "string", "enum": list(GIVE_ITEMS),
+                    "description": "Which bit: 'map', 'compass' or "
+                                   "'boss_key'."}},
+          ["item"]),
 ]
 
 TOOL_NAMES = tuple(t["name"] for t in TOOLS)
@@ -246,7 +273,8 @@ class DevTools:
 
     def call(self, name: str, args: dict) -> dict:
         handler = {"dev_teleport": self.teleport,
-                   "dev_warp": self.warp}.get(name)
+                   "dev_warp": self.warp,
+                   "dev_give_item": self.give_item}.get(name)
         if handler is None:
             return {"ok": False, "error": f"unknown dev tool {name!r}"}
         return handler(args or {})
@@ -362,6 +390,46 @@ class DevTools:
             out["diagnostic"] = " ".join(notes)
         return out
 
+    def give_item(self, args: dict) -> dict:
+        if not self.link.connected:
+            return {"ok": False, "error": "game not connected"}
+        item = args.get("item")
+        if item not in GIVE_ITEMS:
+            return {"ok": False,
+                    "error": f"dev_give_item's item must be one of "
+                             f"{', '.join(GIVE_ITEMS)} (got {item!r}) — "
+                             f"dungeon items only, by design (the slate "
+                             f"grows evidence-first)"}
+        res = self._op({"type": "agent", "op": "give_dungeon_item",
+                        "item": item}, patch=DEV_GIVE_PATCH)
+        if not res.get("ok"):
+            return res
+        out = {"ok": True, "item": item,
+               "dungeon_index": res.get("dungeon_index")}
+        # The grant runs on the frame hook with no scene load behind it,
+        # so the very next state read carries the verdict. The read-back
+        # is the proof (the ninth flight's wallet-delta rule); an op's
+        # success alone proves only that the request was performed
+        # somewhere, and docs/08 says never to stop at that.
+        st = self.game.state()
+        row = st.get("dungeon_items")
+        if isinstance(row, dict):
+            out["now"] = row
+            if not row.get(item):
+                out["ok"] = False
+                out["error"] = (
+                    f"the op reported success but the state's "
+                    f"dungeon_items row read back {item!r} still unset — "
+                    f"do not trust the grant")
+        else:
+            out["diagnostic"] = (
+                f"the grant succeeded but the state carries no "
+                f"dungeon_items row to verify against — on a "
+                f"{DEV_GIVE_PATCH} instrument these ship together, so "
+                f"either the scene changed under the read or something "
+                f"is wrong; read oot://state before trusting it")
+        return out
+
     def warp(self, args: dict) -> dict:
         if not self.link.connected:
             return {"ok": False, "error": "game not connected"}
@@ -462,7 +530,7 @@ class DevTools:
                 return st, st, round(time.monotonic() - started, 1), unread
         return None, last, round(time.monotonic() - started, 1), unread
 
-    def _op(self, payload: dict) -> dict:
+    def _op(self, payload: dict, patch: str = DEV_PATCH) -> dict:
         """Drive one STAGED main-thread op to its verdict.
 
         Both dev ops ride the instrument's staged protocol — the Sail
@@ -489,7 +557,7 @@ class DevTools:
                 return {"ok": False,
                         "error": f"this instrument predates the "
                                  f"{payload['op']!r} dev op — rebuild SoH "
-                                 f"with the {DEV_PATCH} AgentLink patch "
+                                 f"with the {patch} AgentLink patch "
                                  f"(dojo docs/33)"}
             if status != "try_again":
                 out = {"ok": False, "error": err or f"{payload['op']} failed"}

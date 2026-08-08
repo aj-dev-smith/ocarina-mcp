@@ -333,7 +333,26 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: through the Know-It-All Brothers' open-doorway load trigger into
 #: an unmapped interior — each class now establishes its ground,
 #: never inherits it).
-OCARINA_VERSION = "0.14.1"
+#: 0.14.2: THE DUNGEON-ITEMS RIDER (2026-08-07, later the same night —
+#: docs/34 criterion 4 closed, live). The instrument grows the
+#: `dungeon_items` state field (map/compass/boss_key/small_keys for
+#: the CURRENT dungeon, by the game's own gSaveContext.mapIndex —
+#: ABSENT outside dungeon-indexed scenes, never a wrong row) and the
+#: `give_dungeon_item` op; ocarina grows `dev_give_item` (--dev-tools,
+#: journaled, dungeon items ONLY — the slate stays evidence-first),
+#: whose reply carries the row read back after the grant: the
+#: read-back is the proof, never the op's word. 0.14.0's "loud note
+#: until the rider lands" path retires itself the moment the wire
+#: carries the row. Live the same night: the Map grant widened
+#: oot://place to outline entries carrying no legs (criterion 4's
+#: cause-and-effect form), and the whole live suite ran green with
+#: ZERO skips — including the room pin, which now establishes Kokiri
+#: itself instead of skipping when the boot save wakes elsewhere
+#: (this night it woke inside ydan). The fresh-entry fog cap counts
+#: presence-earned regions only: a boot line that owns the Map
+#: legitimately adds outlines, which is the ratified widening, not a
+#: reveal leak. Tests 437 -> 444.
+OCARINA_VERSION = "0.14.2"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

@@ -69,6 +69,13 @@ class StubLink:
         self.dev_sent: list = []
         self.teleport_script: list = []
         self.warp_script: list = []
+        self.give_script: list = []
+        #: The dungeonItems row for the current dungeon (the docs/34
+        #: rider): present on state replies only in dungeon-indexed
+        #: scenes, exactly like the real payload. small_keys -1 is the
+        #: game's "counter never started".
+        self.dungeon_items = {"map": False, "compass": False,
+                              "boss_key": False, "small_keys": -1}
         self.entrance_table = {529: 85, 0: 0, 626: 52}
         self.warp_delay_polls = 1
         self.floor_y = 0.0              # a teleport below the floor snaps up
@@ -120,6 +127,13 @@ class StubLink:
     def push_wire(self, msg: dict) -> None:
         """Tests inject wire messages (agent_event / hook shapes) here."""
         self._events.append(msg)
+
+    def _dungeon_indexed(self) -> bool:
+        """The real payload's predicate (Map_Init's dungeon case list):
+        scenes 0x00-0x10 plus the boss arenas 0x11-0x18 — contiguous, so
+        one range here."""
+        scene = self.world.get("scene")
+        return isinstance(scene, int) and 0 <= scene <= 0x18
 
     def _stage_teleport(self, payload: dict) -> tuple:
         """Write the respawn record and start the reload clock. Returns
@@ -177,6 +191,8 @@ class StubLink:
             res["paused"] = self.paused
             res["frame"] = self.frame
             res["gameplay_frames"] = self.gameplay_frames
+            if self._dungeon_indexed():
+                res["dungeon_items"] = dict(self.dungeon_items)
         elif op == "pause":
             self.paused = bool(payload.get("on", True))
         elif op == "scan":
@@ -264,6 +280,22 @@ class StubLink:
                             "y": float(payload.get("y", 0.0)),
                             "z": float(payload.get("z", 0.0)),
                             "room": resolved_room, "yaw": yaw})
+        elif op == "give_dungeon_item":
+            self.dev_sent.append(dict(payload))
+            scripted = self.give_script.pop(0) if self.give_script else None
+            if scripted is not None:
+                res.update(scripted)
+            elif payload.get("item") not in ("map", "compass", "boss_key"):
+                res["status"] = "failure"
+                res["error"] = "bad args"
+            elif not self._dungeon_indexed():
+                res["status"] = "failure"
+                res["code"] = -20
+                res["error"] = ("not in a dungeon-indexed scene — no "
+                                "dungeonItems row applies here")
+            else:
+                self.dungeon_items[payload["item"]] = True
+                res["dungeon_index"] = self.world["scene"]
         elif op == "warp":
             self.dev_sent.append(dict(payload))
             scripted = self.warp_script.pop(0) if self.warp_script else None

@@ -178,7 +178,31 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play (server at 0.14.1; the nav program BUILT and LIVE-VERIFIED — the maze acceptance flight is next)
+## State of play (server at 0.14.2; the nav program BUILT and LIVE-VERIFIED, docs/34 criterion 4 closed live — the maze acceptance flight is next)
+
+- **0.14.2 — THE DUNGEON-ITEMS RIDER (2026-08-07, later the same
+  night, autonomous — docs/34 criterion 4 closed and LIVE-VERIFIED).**
+  The wire grows `dungeon_items` (map/compass/boss_key/small_keys for
+  the CURRENT dungeon by the game's own `gSaveContext.mapIndex`;
+  ABSENT outside dungeon-indexed scenes — Map_Init's own case list,
+  never a wrong row) and the `give_dungeon_item` op; ocarina grows
+  `dev_give_item` (--dev-tools, journaled, scored-refused, dungeon
+  items ONLY — the phase-2 slate stays evidence-first), whose reply
+  carries the row read back after the grant (the read-back is the
+  proof — the wallet-delta rule). 0.14.0's Map widening now runs live:
+  the live pin granted the Map in a fogged ydan and `oot://place`
+  widened to outline entries carrying no legs. The whole live suite
+  ran green with ZERO skips (11 tests, ~24 s, cold start): the room
+  pin now establishes Kokiri itself instead of skipping when the boot
+  save wakes elsewhere, and the fresh-entry fog cap counts
+  presence-earned regions only (a boot line owning the Map adds
+  outlines legitimately — the ratified widening, not a leak). No
+  contract touch: the dev family's "successors" clause covers the
+  verb; the widening presentation was ratified in docs/34. Tests
+  437 → 444. Criterion 4's dev rider is CLOSED; the remaining filed
+  instrument riders are room tables (room-grain reveal), the enemy
+  awake/asleep flag (backlog #3's open half), and Compass chest
+  markers (deferred: the census sees only the loaded room).
 
 - **0.14.1 — THE LIVE PASS (2026-08-07, the same night; AJ's "just go
   for it").** SoH launched from the CLI (Sail on test port 43390; the
@@ -218,7 +242,8 @@ silently-never-fires transition shape, twice).
   grain (no room table in scene collision — v1 fogs at REGION grain,
   under-revealing; region→room bindings observed off the wire's `room`
   field) and `dungeon_items` (Map widening built, waiting on the wire
-  rider — backlog). Tests 421 → 437; live family
+  rider — CLOSED by 0.14.2 the same night, live). Tests 421 → 437;
+  live family
   (`tests/live/test_discovery_live.py`, criteria 1+5) RUN and GREEN
   the same night (see 0.14.1). **The maze acceptance flight now covers
   docs/30 AND docs/34.**

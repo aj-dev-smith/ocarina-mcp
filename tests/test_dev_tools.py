@@ -461,6 +461,67 @@ class TestTeleportCrossesARoom(DevCase):
         self.assertIn(dev.DEV_FW_PATCH, body["diagnostic"])
 
 
+class TestGiveDungeonItem(DevCase):
+    """dev_give_item (the docs/34 criterion-4 rider): dungeon items only,
+    the game's own row, and the read-back is the proof."""
+
+    def setUp(self):
+        super().setUp()
+        self.link.world["scene"] = 0        # ydan: dungeon-indexed
+
+    def test_the_verb_registers_with_the_item_enum(self):
+        tools = {t["name"]: t for t in self.rpc("tools/list")["result"]["tools"]}
+        self.assertIn("dev_give_item", tools)
+        schema = tools["dev_give_item"]["inputSchema"]
+        self.assertEqual(schema["required"], ["item"])
+        self.assertEqual(schema["properties"]["item"]["enum"],
+                         ["map", "compass", "boss_key"])
+
+    def test_a_grant_lands_and_the_read_back_proves_it(self):
+        body = self.body(self.call_tool("dev_give_item", {"item": "map"}))
+        self.assertTrue(body["ok"], body)
+        self.assertEqual(body["item"], "map")
+        self.assertEqual(body["dungeon_index"], 0)
+        self.assertTrue(body["now"]["map"])
+        self.assertFalse(body["now"]["compass"], "one bit, not the row")
+        # And the world agrees on the next ordinary read.
+        self.assertTrue(self.game.state()["dungeon_items"]["map"])
+
+    def test_success_without_the_bit_is_reported_as_failure(self):
+        # A scripted success that never wrote the bit: the handler must
+        # believe the read-back, not the op (docs/08 — the wallet-delta
+        # rule from the first live buy).
+        self.link.give_script = [{"dungeon_index": 0}]
+        result = self.call_tool("dev_give_item", {"item": "compass"})
+        self.assertTrue(result["isError"])
+        self.assertIn("read back", result["content"][0]["text"])
+
+    def test_outside_a_dungeon_the_games_refusal_comes_by_name(self):
+        self.link.world["scene"] = 85       # Kokiri: no dungeonItems row
+        result = self.call_tool("dev_give_item", {"item": "map"})
+        self.assertTrue(result["isError"])
+        self.assertIn("dungeon-indexed", result["content"][0]["text"])
+
+    def test_a_non_dungeon_item_is_refused_before_the_wire(self):
+        result = self.call_tool("dev_give_item", {"item": "slingshot"})
+        self.assertTrue(result["isError"])
+        self.assertIn("dungeon items only", result["content"][0]["text"])
+        self.assertEqual(self.link.dev_sent, [], "nothing reached the wire")
+
+    def test_an_old_instrument_answers_loudly(self):
+        self.link.give_script = [{"status": "failure",
+                                  "error": "unknown agent op"}]
+        result = self.call_tool("dev_give_item", {"item": "map"})
+        self.assertTrue(result["isError"])
+        self.assertIn(dev.DEV_GIVE_PATCH, result["content"][0]["text"])
+
+    def test_the_grant_journals_like_every_cheat(self):
+        self.call_tool("dev_give_item", {"item": "map"})
+        marks = [e for e in self.journal() if e["event"] == "dev_cheat"]
+        self.assertEqual([(m["tool"], m["args"]) for m in marks],
+                         [("dev_give_item", {"item": "map"})])
+
+
 class TestTheMarkIsPermanent(DevCase):
     """Commitment 2: dev use is structurally un-hideable."""
 

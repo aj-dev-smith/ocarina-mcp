@@ -80,6 +80,12 @@ gates says anything about the code under test.
   NEAR the request (floor snap and spawn-safety nudges are the game
   doing its job, not the verb missing). `counters()` costs a reload
   per call now; keep it at the edges of a test.
+
+  The room pin establishes Kokiri Forest ITSELF (0.14.2) — the
+  ensure_mapped_ground doctrine one notch tighter: a boot save can wake
+  the world in any mapped scene (the dungeon-items night woke it
+  inside ydan), and a pin that knows one scene's rooms warps there
+  rather than skipping.
 - `test_walk_live.py` — the routed-walk family (0.13.0, docs/30:
   "development happens against the dev harness"). `walk_to` and
   `reachable` are BEHAVIOR-layer verbs, so the repo carries a probe
@@ -103,7 +109,16 @@ gates says anything about the code under test.
   Tree presents presence only (a handful of regions, DISCOVERY GRAIN
   note, `region_discovered` in the journal), and warp-out/warp-back
   re-presents the earned map from the repo without re-awarding
-  discovery. RUN and green with the walk family, same night.
+  discovery. RUN and green with the walk family, same night. 0.14.2
+  added criterion 4: `dev_give_item` grants the Dungeon Map (the wire's
+  `dungeon_items` row read back as the proof) and the document widens
+  to outline entries carrying no legs — run and green later that same
+  night. The fog cap counts presence-earned regions only, because a
+  boot line that owns the Map legitimately adds outlines (the ratified
+  widening, not a reveal leak). The witnesses are all blessed reads:
+  `oot://state` is the curated digest and rightly carries no raw
+  dungeonItems row, so the test reads the place document's own notes
+  and the grant verb's read-back, never a private channel.
 
 ## The pattern to keep: warp-there-and-pin
 

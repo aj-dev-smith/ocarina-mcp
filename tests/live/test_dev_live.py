@@ -199,6 +199,13 @@ class TestDevTeleportCrossesARoom(LiveDevCase):
 
     def test_the_room_argument_is_the_room_the_world_ends_in(self):
         self.ensure_mapped_ground()
+        # This pin needs one PARTICULAR mapped scene, so it establishes
+        # it (the ensure_mapped_ground doctrine, one notch tighter): a
+        # boot save can wake the world anywhere — the dungeon-items live
+        # night woke it inside ydan, mapped but roomed wrong for this.
+        if self.server.state().get("scene") != KOKIRI_FOREST_SCENE:
+            self.server.call("dev_warp",
+                             {"entrance": KOKIRI_FOREST_FROM_LINKS_HOUSE})
         room_before = self.counters()["room"]
         scene = self.server.state()["scene"]
         if scene != KOKIRI_FOREST_SCENE or room_before not in KOKIRI_ROOMS:
