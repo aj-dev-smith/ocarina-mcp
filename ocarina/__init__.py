@@ -315,7 +315,25 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: grows the discovery family (fresh entry fogged; warp-out/warp-back
 #: re-presents, criterion 5) — UNRUN with the walk family, same
 #: reason: SoH was down.
-OCARINA_VERSION = "0.14.0"
+#: 0.14.1: THE LIVE PASS (2026-08-07, the same night, AJ's "just go
+#: for it" — SoH launched from the CLI, boot clicked through by the
+#: harness itself, all ten live tests green from a cold start). One
+#: server-side fix rode home: walk_to's arrival verdict is DISTANCE
+#: (plus the map's on-mesh word); region identity demoted to
+#: diagnosis — a target within tolerance of a region seam legally
+#: ends with Link localized to the neighbour (found live at the seam
+#: where the village floor meets the Know-It-All plateau), and the
+#: reply's `region` now names where the map says Link IS. Harness
+#: lessons, all in tests/live: the boot gate (first light's
+#: boot_from_title in the throwaway repos + await_game waiting for
+#: PLAY state — racing the attract demo wedged every warp), the
+#: patient retry on transition-in-progress (the world mid-reload is
+#: not a verdict), spawn-settle before probing, and
+#: ensure_mapped_ground (test_3's own elected target walked Link
+#: through the Know-It-All Brothers' open-doorway load trigger into
+#: an unmapped interior — each class now establishes its ground,
+#: never inherits it).
+OCARINA_VERSION = "0.14.1"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

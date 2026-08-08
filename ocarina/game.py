@@ -989,17 +989,25 @@ class Game:
                 pass
         here = self.pos()
         hit = g.locate(*here) if here else None
-        if hit is None or hit[0]["id"] != rid:
-            got = g.region_name(hit[0]) if hit else "OFF THE MAP"
+        if hit is None:
             raise RouteFailed(
-                f"walked the route but the map says Link is in {got}, "
-                f"not {route['region']}")
+                "walked the route but the map cannot place Link at all — "
+                "OFF THE MAP")
         dist = self.dist_to_point(tx, tz)
         if dist > within + 1.0:
+            # Region identity is diagnosis here, never the verdict: a
+            # target within tolerance of a region seam legally ends with
+            # Link localized to the neighbour (first live run, 2026-08-07
+            # — the village floor meets the Know-It-All plateau), so
+            # DISTANCE is arrival and the map's word is on-mesh-ness.
+            got = g.region_name(hit[0])
+            where = ("" if hit[0]["id"] == rid else
+                     f" — and the map says Link is in {got}, "
+                     f"not {route['region']}")
             raise RouteFailed(
                 f"route complete but Link is {dist:.0f} units from the "
-                f"target (asked for within {within:.0f})")
-        out = {"ok": True, "region": route["region"],
+                f"target (asked for within {within:.0f}){where}")
+        out = {"ok": True, "region": g.region_name(hit[0]),
                "distance": round(dist, 1),
                "duration_s": round(time.time() - started, 1)}
         if route.get("squeezes"):

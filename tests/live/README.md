@@ -20,7 +20,15 @@ permanent ink (`dev_mode` banner, one `dev_cheat` line per call).
 OCARINA_LIVE=1 python3 -m unittest discover -s tests/live -t .
 ```
 
-with Shipwright running (Sail enabled, a save file loaded). Knobs:
+with Shipwright running (Sail enabled). A save file need NOT be loaded:
+a game that dials in on the title screen is booted by the harness
+itself — every throwaway repo's machine opens on first light's
+`boot_from_title` (A/START only, so the file-select cursor cannot leave
+slot 0 or reach Copy/Erase), and `await_game` holds the tests until the
+world is in PLAY state (the digest's `scene` leaves -1 only past the
+save_loaded gate). The first live run (2026-08-07) raced a cold boot's
+attract demo instead and wedged every warp on "a scene transition is
+already in progress"; the gate is that lesson. Knobs:
 
 | env | default | what |
 |---|---|---|
@@ -28,6 +36,7 @@ with Shipwright running (Sail enabled, a save file loaded). Knobs:
 | `OCARINA_O2R` | `/Users/aj/Code/Shipwright/oot.o2r` | the place sense's collision source — the position assertions ride `place.*`, and skip without it |
 | `OCARINA_LIVE_PORT` | 43384 | the Sail port (only for exercising the gates, or a second bench) |
 | `OCARINA_LIVE_CONNECT_S` | 20 | how long to wait for SoH to dial in before skipping |
+| `OCARINA_LIVE_BOOT_S` | 90 | how long a connected game gets to reach play state (the boot behavior pressing through the menus) before skipping |
 
 The default suite (`python3 -m unittest discover -s tests -t .`) picks
 these up and skips them instantly; they never fail there.
@@ -81,14 +90,20 @@ gates says anything about the code under test.
   pins: the cliff (a cross-region target) refused cold; `reachable`
   agreeing with the walk in both directions; a routed walk arriving
   map-verified. Warps land at ENTRANCES (the third router lesson:
-  entrance spawns are in-bounds by construction). UNRUN as written —
-  built 2026-08-07 with SoH down; run it before the maze flight.
+  entrance spawns are in-bounds by construction). RUN and green
+  2026-08-07, the same night it was written — and the run earned its
+  keep twice over: it found walk_to's arrival verdict over-reading
+  region identity at a seam (0.14.1: distance is arrival, region is
+  diagnosis), and test_3's own elected target walked Link through the
+  Know-It-All Brothers' open-doorway load trigger — load triggers are
+  not in the collision data, so the test now leaves the world on known
+  ground with a cleanup warp, pass or fail.
 - `test_discovery_live.py` — the discovery-grain family (0.14.0,
   docs/34, criteria 1 and 5 as pins): a dark repo warped into the Deku
   Tree presents presence only (a handful of regions, DISCOVERY GRAIN
   note, `region_discovered` in the journal), and warp-out/warp-back
   re-presents the earned map from the repo without re-awarding
-  discovery. UNRUN with the walk family — same night, same reason.
+  discovery. RUN and green with the walk family, same night.
 
 ## The pattern to keep: warp-there-and-pin
 

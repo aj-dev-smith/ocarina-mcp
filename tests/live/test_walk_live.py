@@ -39,11 +39,17 @@ KOKIRI_FOREST_SCENE = 85
 TUNNEL_INTERIOR = (-780.0, 1220.0)
 
 MACHINE_YAML = """\
-# tests/live walk family: stand_watch + the walk probe (see module doc).
+# tests/live walk family: boot, stand_watch, and the walk probe.
 version: 1
-initial: stand_watch
+initial: boot_to_save
 
 nodes:
+  boot_to_save:
+    behavior: boot_from_title_v1
+    transitions:
+      - name: booted
+        on: behavior_done
+        do: goto stand_watch
   stand_watch:
     behavior: stand_watch_v1
     transitions:
@@ -145,6 +151,22 @@ class LiveWalkCase(unittest.TestCase):
         body = self.server.call("dev_warp", {"entrance": KOKIRI_GROUND})
         self.assertTrue(body["ok"], body)
         self.assertEqual(self.server.state()["scene"], KOKIRI_FOREST_SCENE)
+        # Let the spawn SETTLE before handing Link to a probe: a fresh
+        # arrival slides a few units onto the floor, and the probe
+        # brackets its verb with pos samples — the first live run read
+        # `reachable` as having "moved" 3 units it never caused.
+        last = None
+        deadline = time.monotonic() + 6.0
+        while time.monotonic() < deadline:
+            place = self.server.state().get("place") or {}
+            if "x" not in place:
+                return                    # no o2r — the probe skips anyway
+            cur = (place["x"], place["z"])
+            if last is not None and math.hypot(cur[0] - last[0],
+                                               cur[1] - last[1]) < 0.5:
+                return
+            last = cur
+            time.sleep(0.4)
 
     def probe(self, x: float, z: float, mode: str = "walk",
               timeout: float = 90.0) -> dict:
@@ -239,6 +261,15 @@ class LiveWalkCase(unittest.TestCase):
 
     def test_3_a_routed_walk_arrives_map_verified(self):
         self.warp_to_ground()
+        # The first live day's lesson: the elected target sat by the
+        # Know-It-All Brothers' porch, and Link's own arrival crossed
+        # the open doorway's load trigger — the walk completed, the
+        # test passed, and the NEXT family inherited an unmapped house
+        # interior. Load triggers are not in the collision data, so the
+        # election cannot avoid them; leave the world on known ground
+        # instead, pass or fail.
+        self.addCleanup(self.server.call_raw, "dev_warp",
+                        {"entrance": KOKIRI_GROUND})
         tx, tz = self.elect_walkable_target()
         out = self.probe(tx, tz, timeout=90.0)
         self.assertIn("result", out, out)

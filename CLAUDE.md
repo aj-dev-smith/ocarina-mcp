@@ -178,7 +178,30 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play (server at 0.14.0; routed walk + discovery grain BUILT, live pins pending)
+## State of play (server at 0.14.1; the nav program BUILT and LIVE-VERIFIED — the maze acceptance flight is next)
+
+- **0.14.1 — THE LIVE PASS (2026-08-07, the same night; AJ's "just go
+  for it").** SoH launched from the CLI (Sail on test port 43390; the
+  session's registered server kept 43384), the harness booted the game
+  ITSELF — every throwaway live repo's machine now opens on first
+  light's boot_from_title (A/START only, slot 0 by construction) and
+  `await_game` holds tests until PLAY state — and all TEN live tests
+  ran green from a cold start: the dev family re-verified, the walk
+  family (cliff refused cold with zero movement in-body; reachable
+  agreeing both directions; a routed walk arriving map-verified) and
+  the discovery family (fresh-entry fog + warp-out/warp-back holds)
+  verified on first-ever run. One server-side fix rode home, the live
+  run's own find: walk_to's arrival verdict over-read region identity
+  at a region seam (village floor meets the Know-It-All plateau) —
+  DISTANCE is now arrival, region is diagnosis, and the reply's
+  `region` names where the map says Link IS. Harness lessons pinned
+  in tests/live: the boot gate (racing the attract demo wedged every
+  warp), patient retry on transition-in-progress, spawn-settle before
+  probing, ensure_mapped_ground (test_3's elected target walked Link
+  through the Know-It-All open-doorway load trigger into an unmapped
+  interior — each class establishes its ground, never inherits it).
+  **Remaining before scored claims: the maze acceptance flight, flag
+  off — docs/30 criteria 1–8 + docs/34's in one mission (needs AJ).**
 
 - **0.14.0 — THE DISCOVERY GRAIN (built 2026-08-07, late the same
   night, right after 0.13.0 — dojo docs/34's ratified slate,
@@ -196,9 +219,9 @@ silently-never-fires transition shape, twice).
   under-revealing; region→room bindings observed off the wire's `room`
   field) and `dungeon_items` (Map widening built, waiting on the wire
   rider — backlog). Tests 421 → 437; live family
-  (`tests/live/test_discovery_live.py`, criteria 1+5) UNRUN with the
-  walk family. **The maze acceptance flight now covers docs/30 AND
-  docs/34.**
+  (`tests/live/test_discovery_live.py`, criteria 1+5) RUN and GREEN
+  the same night (see 0.14.1). **The maze acceptance flight now covers
+  docs/30 AND docs/34.**
 
 - **0.13.0 — ROUTE-AWARE WALKING (built 2026-08-07, late the same
   night, in an autonomous session while AJ was mobile — dojo docs/30's
@@ -225,13 +248,12 @@ silently-never-fires transition shape, twice).
   bump: SURFACE.md place bullet + MACHINE.md "The routed walk", both
   per docs/30's ratified Contract impact. Tests 379 → 421 (real-o2r
   pins: the crawl link, maze-region clearance).
-  **`tests/live/test_walk_live.py` is UNRUN** (SoH was down): a walk
-  probe behavior carries walk_to/reachable results out via
-  walk_result.json with zero-movement + elapsed measured in-body.
-  **Next session: run BOTH live families (needs the game up + a file
-  loaded — file-select needs AJ's hands), then the maze acceptance
-  flight, flag off — docs/30 criteria 1–8 and docs/34's in one
-  mission.**
+  `tests/live/test_walk_live.py`: a walk probe behavior carries
+  walk_to/reachable results out via walk_result.json with
+  zero-movement + elapsed measured in-body — RUN and GREEN the same
+  night (see 0.14.1; the run found the seam-arrival fix).
+  **Next: the maze acceptance flight, flag off — docs/30 criteria 1–8
+  and docs/34's in one mission (needs AJ).**
 
 - **THE NAV PROGRAM (2026-08-07 — FULLY RATIFIED, all three docs,
   all open calls as recommended: AJ, late that night, "ok both fully

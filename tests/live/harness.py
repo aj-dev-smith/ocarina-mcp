@@ -19,6 +19,16 @@ gates, cheapest first:
    progress!) owns the game. Skip, loudly, and touch nothing.
 3. No game dials in inside `CONNECT_TIMEOUT_S` — SoH isn't running. Skip.
 
+A game that dials in on the TITLE SCREEN is not a skip: the repo's
+machine opens on first light's `boot_from_title` (A/START only — in
+FileChoose_UpdateMainMenu the cursor moves only on stick/d-pad input,
+so slot 0 opens and Copy/Erase are unreachable by construction), and
+`await_game` waits for PLAY state (the digest's `scene` leaves -1 only
+once a save is loaded — the save_loaded narration gate, read back).
+The first live run of the walk family (2026-08-07) raced a cold boot's
+attract demo and wedged every warp on "a scene transition is already
+in progress"; this gate is that lesson.
+
 Never a failure, because none of those says anything about the code
 under test. A real failure here means the game WAS there and the
 harness verb did the wrong thing.
@@ -45,6 +55,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: at once; this is generous, and it is only ever paid when someone
 #: asked for live tests.
 CONNECT_TIMEOUT_S = float(os.environ.get("OCARINA_LIVE_CONNECT_S", 20.0))
+
+#: How long a connected game gets to reach PLAY state before we skip.
+#: A cold boot pays logo + title + file select + the load cutscene; the
+#: boot behavior presses through it at ~0.6 s a press.
+BOOT_TIMEOUT_S = float(os.environ.get("OCARINA_LIVE_BOOT_S", 90.0))
 
 ENV_FLAG = "OCARINA_LIVE"
 
@@ -103,16 +118,24 @@ def require_free_sail_port(port: int = LIVE_PORT) -> None:
             probe.close()
 
 
-#: The throwaway repo's machine: ONE idle leaf whose body reads state
-#: and waits. A live test drives the world through the dev verbs, so the
+#: The throwaway repo's machine: boot to the save if the game is on the
+#: title screen (a body that exits with ZERO presses when a save is
+#: already loaded), then ONE idle leaf whose body reads state and waits.
+#: A live test drives the world through the dev verbs, so past boot the
 #: autopilot's whole job is to exist — it must never press a button or
 #: move Link, or the assertions would be racing it.
 MACHINE_YAML = """\
-# tests/live: the idle machine (see harness.py). Touches nothing.
+# tests/live: boot to the save, then idle (see harness.py).
 version: 1
-initial: stand_watch
+initial: boot_to_save
 
 nodes:
+  boot_to_save:
+    behavior: boot_from_title_v1
+    transitions:
+      - name: booted
+        on: behavior_done
+        do: goto stand_watch
   stand_watch:
     behavior: stand_watch_v1
     transitions:
@@ -122,9 +145,32 @@ nodes:
 """
 
 IDLE_BEHAVIOR = '''\
-"""tests/live: the idle body. Reads the world, presses nothing."""
+"""tests/live: boot to the save, then idle (press nothing).
+
+boot_from_title is first light's boot body (examples/first-light/
+machine/behaviors/watch.py), verbatim but for this docstring. SAFETY
+(ported argument): presses only A/START and NEVER touches the stick or
+d-pad. In FileChoose_UpdateMainMenu A/START act on buttonIndex, which
+only moves on stick/d-pad input, so the cursor cannot reach Copy/Erase
+and an existing file goes straight to Open File — the FIRST slot,
+automatically. This cannot start a new game over an existing save. And
+when a save is ALREADY loaded the while-condition is false before the
+first press: zero buttons touched, straight to stand_watch.
+"""
 
 from ocarina.behavior import Behavior
+
+
+def _boot_body(game, ctx):
+    presses = 0
+    while not game.state().get("save_loaded") and presses < 80:
+        game.press("START" if presses % 2 == 0 else "A", frames=4)
+        presses += 1
+        game.wait(0.6)
+
+
+def _boot_success(game, initial, events):
+    return bool(game.state().get("save_loaded"))
 
 
 def _stand(game, ctx):
@@ -133,6 +179,11 @@ def _stand(game, ctx):
 
 
 BEHAVIORS = {
+    "boot_from_title_v1": Behavior(
+        name="boot_from_title", version=1,
+        description="press A/START (never the stick) until the save file loads",
+        body=_boot_body, success=_boot_success, timeout_s=90.0,
+        grade="harness fixture; safe by construction, see module docstring"),
     "stand_watch_v1": Behavior(
         name="stand_watch", version=1,
         description="live-harness idle: observe, touch nothing",
@@ -247,21 +298,36 @@ class LiveServer:
             raise AssertionError(f"{method} failed: {msg['error']}")
         return msg["result"]
 
+    #: The one refusal that is the WORLD's timing, not a verdict: a dev
+    #: verb asked for while the previous reload is still in flight (the
+    #: seam between test classes — the outgoing server's last teleport
+    #: is still landing when the next server's first verb arrives).
+    #: Re-asking is what a patient client does; nothing is masked,
+    #: because a wedged transition still exhausts the retry window.
+    _TRANSIENT = "scene transition is already in progress"
+
     def call(self, name: str, arguments=None, timeout: float = 60.0) -> dict:
         """A tool call that must succeed; returns its JSON body."""
-        result = self.rpc("tools/call",
-                          {"name": name, "arguments": arguments or {}},
-                          timeout=timeout)
+        result = self.call_raw(name, arguments, timeout=timeout)
         text = result["content"][0]["text"]
         if result.get("isError"):
             raise AssertionError(f"{name} refused: {text}")
         return json.loads(text)
 
     def call_raw(self, name: str, arguments=None, timeout: float = 60.0) -> dict:
-        """A tool call that may refuse; returns the raw MCP result."""
-        return self.rpc("tools/call",
-                        {"name": name, "arguments": arguments or {}},
-                        timeout=timeout)
+        """A tool call that may refuse; returns the raw MCP result.
+        Retries only the transition-in-progress refusal (see above)."""
+        deadline = time.monotonic() + 10.0
+        while True:
+            result = self.rpc("tools/call",
+                              {"name": name, "arguments": arguments or {}},
+                              timeout=timeout)
+            if (result.get("isError")
+                    and self._TRANSIENT in result["content"][0]["text"]
+                    and time.monotonic() < deadline):
+                time.sleep(0.5)
+                continue
+            return result
 
     def read(self, uri: str) -> dict:
         result = self.rpc("resources/read", {"uri": uri})
@@ -270,22 +336,39 @@ class LiveServer:
     # -- the world ---------------------------------------------------------
 
     def await_game(self, timeout: float = CONNECT_TIMEOUT_S) -> dict:
-        """Gate 3: wait for SoH to dial in. Skips if it never does."""
+        """Gate 3: wait for SoH to dial in, then for PLAY state. Skips
+        if the game never appears or never leaves the title screen —
+        the repo's machine is pressing through the menus meanwhile
+        (boot_to_save), so a cold boot needs nobody's hands."""
         deadline = time.monotonic() + timeout
         status = {}
-        while time.monotonic() < deadline:
+        while True:
             if self.proc.poll() is not None:
                 raise unittest.SkipTest(
                     f"the server exited while waiting for the game "
                     f"(rc={self.proc.returncode})")
             status = self.call("status")
             if status.get("game_connected"):
-                return status
+                break
+            if time.monotonic() >= deadline:
+                raise unittest.SkipTest(
+                    f"no game connected on port {self.port} within "
+                    f"{timeout:.0f}s — launch Shipwright (Sail enabled), "
+                    f"then re-run with {ENV_FLAG}=1")
             time.sleep(0.5)
+        # In play? The digest's scene leaves -1 only past the
+        # save_loaded gate; racing the attract demo wedges every warp
+        # on "a scene transition is already in progress" (2026-08-07).
+        boot_deadline = time.monotonic() + BOOT_TIMEOUT_S
+        while time.monotonic() < boot_deadline:
+            scene = self.state().get("scene")
+            if isinstance(scene, int) and scene >= 0:
+                return status
+            time.sleep(1.0)
         raise unittest.SkipTest(
-            f"no game connected on port {self.port} within {timeout:.0f}s — "
-            f"launch Shipwright (Sail enabled) and load a save file, then "
-            f"re-run with {ENV_FLAG}=1")
+            f"the game connected but never reached play state in "
+            f"{BOOT_TIMEOUT_S:.0f}s — the boot behavior could not get "
+            f"past the menus; load a save by hand and re-run")
 
     def state(self) -> dict:
         """The curated digest — what the world says it is, which is the

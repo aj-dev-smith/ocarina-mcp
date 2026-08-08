@@ -15,6 +15,7 @@ for the three gates. Nothing here is scored play: the server runs under
 import json
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -64,15 +65,45 @@ class LiveDevCase(unittest.TestCase):
         cls.server.stop()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
+    def ensure_mapped_ground(self) -> None:
+        """ESTABLISH the world state this test needs, never inherit it
+        (warp-there-and-pin, applied to the class itself): a previous
+        family may have left the game anywhere — the first live day
+        ended with Link walked into the Know-It-All Brothers' house by
+        his own test target, an unmapped interior where `place.*` is
+        honestly absent and every pose cross-check starves. A dev test
+        may use dev verbs as plumbing; that is what they are for."""
+        if self._place_or_none() is not None:
+            return
+        self.server.call("dev_warp",
+                         {"entrance": KOKIRI_FOREST_FROM_LINKS_HOUSE})
+
+    def _place_or_none(self):
+        """`place.*` with patience: in the beat after a reload (every
+        counters() read is one since 0.12.2) the digest presents no
+        pose yet — the world mid-landing, not a missing sense. Absence
+        that OUTLASTS the window is real."""
+        deadline = time.monotonic() + 5.0
+        while True:
+            place = self.server.state().get("place")
+            if place and "x" in place:
+                return place
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.3)
+
     def pose(self) -> dict:
         """Link's exact position, off the wire. Rides `place.*`, which
-        needs the server's --o2r; without it there is no honest
-        position sense to check the reply against, so the test says so
-        and skips rather than asserting something weaker."""
-        place = self.server.state().get("place")
-        if place is None or "x" not in place:
-            self.skipTest("no place sense (start with --o2r / OCARINA_O2R) — "
-                          "nothing to cross-check the reply against")
+        needs the server's --o2r AND a mapped scene; without either
+        there is no honest position sense to check the reply against,
+        so the test says so and skips rather than asserting something
+        weaker."""
+        place = self._place_or_none()
+        if place is None:
+            self.skipTest(
+                "no place.* in the digest — the server has no --o2r, or "
+                "the scene is unmapped; nothing to cross-check the "
+                "reply against")
         return place
 
     def counters(self) -> dict:
@@ -167,6 +198,7 @@ class TestDevTeleportCrossesARoom(LiveDevCase):
     loads it exactly as a door transition would."""
 
     def test_the_room_argument_is_the_room_the_world_ends_in(self):
+        self.ensure_mapped_ground()
         room_before = self.counters()["room"]
         scene = self.server.state()["scene"]
         if scene != KOKIRI_FOREST_SCENE or room_before not in KOKIRI_ROOMS:
@@ -203,6 +235,7 @@ class TestDevTeleportMoves(LiveDevCase):
     him onto the floor from there."""
 
     def test_teleport_moves_link_and_the_world_arrives_near_the_request(self):
+        self.ensure_mapped_ground()
         start = self.pose()
         home = (start["x"], start["y"], start["z"])
         # 50 units along z, in the room Link is already in: the room the
@@ -240,6 +273,7 @@ class TestDevTeleportMoves(LiveDevCase):
                                  {"x": home[0], "y": home[1], "z": home[2]})
 
     def test_the_reply_carries_the_records_resolved_room_and_yaw(self):
+        self.ensure_mapped_ground()
         here = self.pose()
         home = {"x": here["x"], "y": here["y"], "z": here["z"]}
         facing = 0x4000                       # a quarter turn, in binang
