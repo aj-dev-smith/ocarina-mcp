@@ -71,6 +71,18 @@ gates says anything about the code under test.
   NEAR the request (floor snap and spawn-safety nudges are the game
   doing its job, not the verb missing). `counters()` costs a reload
   per call now; keep it at the edges of a test.
+- `test_walk_live.py` — the routed-walk family (0.13.0, docs/30:
+  "development happens against the dev harness"). `walk_to` and
+  `reachable` are BEHAVIOR-layer verbs, so the repo carries a probe
+  behavior: the test writes `walk_target.json`, `force_state`s the
+  probe node, and reads `walk_result.json` — position-before/after and
+  elapsed time measured INSIDE the body, which is how criterion 1's
+  "zero movement, under 0.5 s" is witnessed rather than asserted. The
+  pins: the cliff (a cross-region target) refused cold; `reachable`
+  agreeing with the walk in both directions; a routed walk arriving
+  map-verified. Warps land at ENTRANCES (the third router lesson:
+  entrance spawns are in-bounds by construction). UNRUN as written —
+  built 2026-08-07 with SoH down; run it before the maze flight.
 
 ## The pattern to keep: warp-there-and-pin
 

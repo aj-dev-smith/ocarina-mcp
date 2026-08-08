@@ -1020,9 +1020,7 @@ class ServerCore:
                 body = {"error": "game not connected"}
             else:
                 st = self.game.state()
-                sample = (self.runtime.place.sample(st)
-                          if self.runtime.place is not None else None)
-                body = senses.digest(st, self.runtime.sightings, sample)
+                body = self.runtime.digest_of(st)
         elif base == "oot://events":
             q = parse_qs(parsed.query)
 

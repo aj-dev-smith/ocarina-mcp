@@ -30,7 +30,8 @@ from typing import Iterable, Optional
 from . import senses
 from .behavior import BehaviorPreempted
 from .link import GameLink, LinkError
-from .place import TraverseFailed, TraverseRefused
+from .place import (RouteFailed, RouteRefused, TraverseFailed,
+                    TraverseRefused, clock_bearing)
 from .protocol import (TICK, buttons_mask, PLAYER_STATE1_DEAD, PLAYER_UNCONTROLLABLE,
                        PLAYER_STATE1_CLIMBING_LADDER, PLAYER_STATE1_CLIMBING_LEDGE,
                        PLAYER_STATE1_ON_A_WALL, PLAYER_STATE2_DO_ACTION_CLIMB)
@@ -230,12 +231,21 @@ class Game:
     def health(self) -> int:
         return self.state().get("health", 0)
 
-    def actors(self, actor_id: Optional[int] = None, max_dist: Optional[float] = None) -> list[dict]:
+    def actors(self, actor_id: Optional[int] = None, max_dist: Optional[float] = None,
+               sighted: bool = False) -> list[dict]:
+        """The raw census, optionally filtered. `sighted=True` keeps only
+        actors carrying the census's own sight bit (0.13.0, docs/30's
+        escort rider closing half of the old backlog #6: seek.py
+        hand-filtered `a["sighted"]` since the sixth flight — the
+        discipline belongs on the surface). Default stays raw: graded
+        bodies must not change meaning."""
         actors = self.state().get("actors", [])
         if actor_id is not None:
             actors = [a for a in actors if a["id"] == actor_id]
         if max_dist is not None:
             actors = [a for a in actors if a["dist_xz"] <= max_dist]
+        if sighted:
+            actors = [a for a in actors if a.get("sighted", False)]
         return actors
 
     def nearest(self, actor_id: int) -> Optional[dict]:
@@ -345,6 +355,14 @@ class Game:
                       timeout: float = 8.0, magnitude: int = 80,
                       repoll: float = 0.25) -> bool:
         """Walk to (x, z), re-aiming as we go. True if we got within `within`.
+
+        UNROUTED — you own the geometry (0.13.0 demotion, docs/30): this
+        is a beeline that discovers walls, cliffs, and props by hitting
+        them, and it never refuses. `walk_to` is the documented default
+        for going anywhere; this stays for the last 20 units, for
+        actor-relative combat footwork, and as the deliberate override
+        when you believe the map's refusal is wrong (a false refusal is
+        an instrument diagnostic — journal it).
 
         Re-aims every `repoll` seconds for two independent reasons: the camera
         rotates while Link moves (so a stick vector computed once decays), and
@@ -818,6 +836,193 @@ class Game:
                 self.pad_clear()
             except LinkError:
                 pass
+
+    # -- the routed walk (0.13.0, docs/30) ---------------------------------
+    # traverse's grain brought down a level: route inside the CURRENT
+    # region, refuse everything else BEFORE movement, by name, in
+    # milliseconds — the ninth flight's 12 s of wall-grinding per
+    # unreachable bush becomes a refusal the collector loop reads in the
+    # same tick. All map refusals live in PlaceSense.resolve_walk; this
+    # layer adds the one thing the mesh cannot see — census props — and
+    # the walking itself (the same wedge/stall/message-box/preemption
+    # discipline traverse walks with).
+
+    #: Link's own XZ radius, for prop-vs-polyline hits (half of
+    #: place.LINK_DIAMETER; the prop's radius is senses.OBSTACLE_RADII's
+    #: labelled guess).
+    PROP_MARGIN = 12.0
+
+    @staticmethod
+    def _dist_to_polyline(ax: float, az: float, pts) -> float:
+        """Min XZ distance from (ax, az) to the polyline through pts."""
+        best = math.inf
+        for (px, pz), (qx, qz) in zip(pts, pts[1:]):
+            dx, dz = qx - px, qz - pz
+            den = dx * dx + dz * dz
+            if den < 1e-12:
+                d = math.hypot(ax - px, az - pz)
+            else:
+                t = max(0.0, min(1.0, ((ax - px) * dx + (az - pz) * dz) / den))
+                d = math.hypot(ax - (px + t * dx), az - (pz + t * dz))
+            best = min(best, d)
+        return best
+
+    def _blocking_props(self, st: dict, pts) -> list:
+        """Census actors of the curated solid kinds sitting on the route
+        (senses.OBSTACLE_RADII — radii are labelled guesses). `pts` is
+        the full polyline including Link's own position. Height-gated on
+        the census's player-relative dist_y so a prop on another floor
+        of the same XZ never blocks a walk under it."""
+        out = []
+        for a in st.get("actors") or []:
+            radius = senses.OBSTACLE_RADII.get(a.get("id"))
+            if radius is None:
+                continue
+            pos = a.get("pos")
+            if not pos or len(pos) < 3:
+                continue
+            if abs(float(a.get("dist_y") or 0.0)) > 150.0:
+                continue
+            d = self._dist_to_polyline(float(pos[0]), float(pos[2]), pts)
+            if d <= radius + self.PROP_MARGIN:
+                out.append((a, d))
+        return out
+
+    def _prop_refusal(self, st: dict, actor: dict, tail: str) -> RouteRefused:
+        """The blocked-by refusal, named the way a sighted player would:
+        kind + clock bearing (the census prop the mesh cannot see)."""
+        kind = senses.actor_name(actor.get("id", -1), actor.get("params"))
+        player = st.get("player") or {}
+        ppos, apos = player.get("pos"), actor.get("pos")
+        where = ""
+        if ppos and apos and player.get("yaw") is not None:
+            hour = clock_bearing(float(ppos[0]), float(ppos[2]),
+                                 int(player["yaw"]),
+                                 float(apos[0]), float(apos[2]))
+            where = f" at your {hour} o'clock"
+        return RouteRefused(
+            f"blocked by a {kind}{where} — {tail}. (Prop radii are "
+            f"per-kind guesses: the wire carries no collider sizes. A "
+            f"false block is an instrument diagnostic — journal it; "
+            f"walk_to_point is the deliberate override)")
+
+    def _route_with_props(self, st: dict, x: float, z: float) -> dict:
+        """resolve_walk + the census-prop pass: detour around standing
+        props (same A*, their polys blocked) or refuse by name. Shared
+        by walk_to and reachable so the query can never disagree with
+        the walk."""
+        place = self.place
+        route = place.resolve_walk(st, x, z)
+        ppos = (st.get("player") or {}).get("pos") or (0.0, 0.0, 0.0)
+        pts = [(float(ppos[0]), float(ppos[2]))] + list(route["waypoints"])
+        props = self._blocking_props(st, pts)
+        if not props:
+            return route
+        for a, _d in props:
+            apos = a["pos"]
+            reach = senses.OBSTACLE_RADII[a["id"]] + self.PROP_MARGIN
+            if math.hypot(float(apos[0]) - x, float(apos[2]) - z) <= reach:
+                raise self._prop_refusal(st, a, "it is sitting on the target")
+        graph, rid = route["graph"], route["rid"]
+        blocked = set()
+        for a, _d in props:
+            apos = a["pos"]
+            blocked |= graph.polys_near(
+                rid, float(apos[0]), float(apos[2]),
+                senses.OBSTACLE_RADII[a["id"]] + self.PROP_MARGIN * 2)
+        try:
+            detour = place.resolve_walk(st, x, z, blocked=frozenset(blocked))
+        except RouteRefused:
+            a, _d = min(props, key=lambda p: p[1])
+            raise self._prop_refusal(
+                st, a, f"no way around it inside {route['region']}") from None
+        pts2 = [(float(ppos[0]), float(ppos[2]))] + list(detour["waypoints"])
+        still = self._blocking_props(st, pts2)
+        if still:
+            raise self._prop_refusal(st, still[0][0],
+                                     "the detour is blocked too")
+        detour["detoured_around"] = sorted(
+            {senses.actor_name(a.get("id", -1), a.get("params"))
+             for a, _d in props})
+        return detour
+
+    def walk_to(self, x: float, z: float, within: float = 30.0,
+                timeout_s: float = 90.0, magnitude: int = 80) -> dict:
+        """Walk to (x, z) BY ROUTE inside the current region (0.13.0,
+        docs/30). Raises RouteRefused before any movement for anything
+        the map does not vouch for — off-mesh start or target, a target
+        in another region (the cliff: named, with the legs out of
+        yours), no in-region path, a census prop with no way around —
+        and RouteFailed when a legal route doesn't complete. Arrival is
+        what the MAP says (docs/08: the primitive's own motions are not
+        proof). Polls preemption mid-walk; fails fast under a message
+        box. Returns {ok, region, distance, duration_s} plus `squeezes`
+        (corridor near Link's own width — presentable narrowness) and
+        `detoured_around` (census props routed around) when they apply.
+
+        Cross-region routing stays YOURS (docs/25, unmoved): this verb
+        refuses at the region boundary and names the legs; sequence
+        them with traverse."""
+        if self.place is None:
+            raise RouteRefused(
+                "no place sense attached (server started without --o2r) — "
+                "the routed walk refuses rather than guesses")
+        st = self.state()
+        tx, tz = float(x), float(z)
+        route = self._route_with_props(st, tx, tz)
+        self._check_message_box("before the walk started")
+        deadline = time.time() + timeout_s
+        started = time.time()
+        g, rid = route["graph"], route["rid"]
+        waypoints = route["waypoints"]
+        try:
+            for i, (wx, wz) in enumerate(waypoints):
+                final = i == len(waypoints) - 1
+                self._traverse_walk(wx, wz,
+                                    within=(within if final else 55.0),
+                                    deadline=deadline, magnitude=magnitude,
+                                    graph=g, rid=rid)
+        finally:
+            try:
+                self.pad_clear()
+            except LinkError:
+                pass
+        here = self.pos()
+        hit = g.locate(*here) if here else None
+        if hit is None or hit[0]["id"] != rid:
+            got = g.region_name(hit[0]) if hit else "OFF THE MAP"
+            raise RouteFailed(
+                f"walked the route but the map says Link is in {got}, "
+                f"not {route['region']}")
+        dist = self.dist_to_point(tx, tz)
+        if dist > within + 1.0:
+            raise RouteFailed(
+                f"route complete but Link is {dist:.0f} units from the "
+                f"target (asked for within {within:.0f})")
+        out = {"ok": True, "region": route["region"],
+               "distance": round(dist, 1),
+               "duration_s": round(time.time() - started, 1)}
+        if route.get("squeezes"):
+            out["squeezes"] = route["squeezes"]
+        if route.get("detoured_around"):
+            out["detoured_around"] = route["detoured_around"]
+        return out
+
+    def reachable(self, x: float, z: float) -> Optional[str]:
+        """walk_to's refusal with the walk removed (docs/30 open call 4,
+        as recommended): the refusal text for (x, z), or None when the
+        map vouches for a route. ZERO movement, no side effects — the
+        election filter both field-authored blacklists were groping
+        toward. A skip's reason goes in the journal instead of an
+        anonymous timeout."""
+        if self.place is None:
+            return ("no place sense attached (server started without "
+                    "--o2r) — the routed walk refuses rather than guesses")
+        try:
+            self._route_with_props(self.state(), float(x), float(z))
+        except RouteRefused as e:
+            return str(e)
+        return None
 
     def controllable(self) -> bool:
         """True when Link will actually respond to the pad."""

@@ -126,6 +126,7 @@ class MachineRuntime:
         self.executor = BehaviorExecutor(game)
         self.seen = senses.SeenKinds(self.repo / ".ocarina" / "seen_kinds.json")
         self.sightings = senses.Sightings()
+        self.motion = senses.Motion()      # the moving bit (docs/30 rider)
         self._sight_warned = False
         self._truncation_warned_scene = object()   # sentinel: no scene judged yet
         # The dialogue fold's state (docs/27): open/closed edge, the last
@@ -199,10 +200,19 @@ class MachineRuntime:
         st = self._last_state
         return st.get("gameplay_frames") if st else None
 
-    def _digest(self) -> dict:
-        st = self._last_state or {}
+    def digest_of(self, st: dict) -> dict:
+        """The curated digest for a snapshot with every rider wired —
+        place sample, the moving bit, the reach judgment. ONE
+        implementation, shared with the server's oot://state, so the
+        resource and the guards can never disagree about the world."""
         sample = self.place.sample(st) if self.place is not None else None
-        return senses.digest(st, self.sightings, sample)
+        reach = ((lambda actor: self.place.judge_reach(st, actor))
+                 if self.place is not None else None)
+        return senses.digest(st, self.sightings, sample,
+                             motion=self.motion, reach=reach)
+
+    def _digest(self) -> dict:
+        return self.digest_of(self._last_state or {})
 
     # -- loading (the reload_machine bridge) ---------------------------------
 
@@ -456,6 +466,7 @@ class MachineRuntime:
                                   f"— the world senses are judging a partial "
                                   f"world, and anything beyond that radius "
                                   f"cannot be sighted, counted or narrated"})
+        self.motion.observe(st)
         for ev in senses.spawn_events(self.sightings.observe(st), self.seen):
             self._record(ev)
             self._dispatch(ev)

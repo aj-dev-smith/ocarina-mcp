@@ -19,6 +19,18 @@ RUNTIME judges every load and every attach against it, and a mismatch
 raises the one runtime-initiated wake (`identity`, hold default). See
 "The declared identity" below.
 
+**Amended 2026-08-07 (ocarina 0.13.0, dojo docs/30 — route-aware
+walking; ratified by AJ with all open calls as recommended, late the
+same night: "ok both fully ratified with your recommended approaches"):**
+the behavior interface gains `walk_to(x, z)` and `reachable(x, z)` (see
+"The routed walk" below); the refusal exception family is renamed
+`RouteRefused`/`RouteFailed` with the Traverse names ALIASED (same
+classes — no graded body's `except` breaks); the digest's
+`nearest_enemy` grows the judged `reach` field and the `moving` bit;
+`game.actors()` grows a `sighted=` filter. `walk_to_point` is
+unchanged and demoted in documentation to the deliberate unrouted
+override.
+
 **Clarification pass, 2026-08-01 (post-first-light):** six points where
 this file was silent and the built server had to choose were reviewed
 and ratified — AJ delegating the ruling to the mind as this surface's
@@ -354,6 +366,47 @@ iteration, so a transition leaving the leaf lands mid-climb rather
 than after the whole leg — the same latency promise `game.wait()`'s
 chunking already made for sleeps. Op-boundary preemption is unchanged
 for everything else.
+
+### The routed walk (added 0.13.0, docs/30)
+
+`game.walk_to(x, z)` walks Link to a point INSIDE the current region by
+route — traverse's grain brought down a level. The region is the
+answer: a target in another walkable component is not walk-reachable by
+construction, so the verb refuses it in milliseconds with the target's
+region and the legs out of Link's named, instead of the 12 seconds of
+wall-grinding the ninth flight paid per unreachable bush. All refusals
+precede ALL movement (`RouteRefused`, one family with traverse's):
+no map / off-mesh start / Link standing ABOVE the mapped floor (an
+actor surface — the height is named, docs/28 learning 4) / target off
+the map / target in another region / no in-region path / blocked by a
+census prop with no way around ("blocked by a treasure_chest at your
+2 o'clock" — prop radii are labelled guesses until the collider wire
+rider lands). A legal route that doesn't complete raises `RouteFailed`.
+Arrival is what the MAP says, never the motion. The walk itself carries
+traverse's discipline: wedge sidestep (mesh-checked), 20 s stall,
+message-box fail-fast, preemption polled mid-walk.
+
+Routes are CLEARANCE-AWARE — a combat-safety requirement, not a
+quality knob (AJ's flight testimony: wall-scrape slowdown turned
+"boulder nearby" into "boulder hit"). The A* penalizes wall-adjacent
+polys and waypoints hold an adaptive offset from region boundaries:
+`min(desired, (width − link_diameter) / 2)` — the desired offset in
+open space, the midline in pinches, and a corridor Link physically
+fits is never refused. A corridor near Link's own width is reported as
+a squeeze in the result (presentable narrowness).
+
+`game.reachable(x, z)` is the same check with the walk removed: the
+refusal text, or None — zero movement, so an electing body filters
+BEFORE committing (the primitive both field-authored blacklists were
+groping toward; skips carry named reasons instead of anonymous
+timeouts).
+
+Cross-region routing stays the MIND's (docs/25, unmoved): `walk_to`
+refuses at the region boundary and names the legs; the mind sequences
+them with `traverse`. `walk_to_point` stays exactly as it was —
+unrouted, never refuses — as the last-20-units tool, combat footwork,
+and the deliberate override when a refusal is believed false (a false
+refusal is an INSTRUMENT DIAGNOSTIC: journal it).
 
 ## What reload_machine() validates
 

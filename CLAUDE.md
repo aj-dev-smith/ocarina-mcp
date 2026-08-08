@@ -178,7 +178,39 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play (server at 0.11.0; boot identity LIVE-VERIFIED)
+## State of play (server at 0.13.0; the routed walk BUILT, live pins pending)
+
+- **0.13.0 — ROUTE-AWARE WALKING (built 2026-08-07, late the same
+  night, in an autonomous session while AJ was mobile — dojo docs/30's
+  ratified slate, complete).** The region is the answer:
+  `game.walk_to(x, z)` routes inside the current region and REFUSES
+  everything else before movement, by name, in milliseconds
+  (`resolve_walk` in place.py holds the whole grammar — off-mesh,
+  target off map, target in another region + the legs out, no path,
+  blocked by a census prop at your N o'clock); `game.reachable` is the
+  refusal with the walk removed (the election filter two flight bodies
+  reinvented as blacklists). Clearance is combat-safety: A* penalizes
+  wall-adjacent polys and waypoints hold the adaptive offset
+  min(desired, (width − 24)/2) — midline in pinches, squeezes
+  reported, a corridor Link fits never refused. Riders landed with it:
+  the STANDING gate (docs/28 learning 4 CLOSED — on an actor surface
+  on_mesh goes False and refusals name the height instead of the wrong
+  region), `nearest_enemy.reach` + `nearest_enemy.moving` (escort
+  riders; moving is census deltas — awake/asleep still needs a wire
+  flag, backlog #3's open half), `game.actors(sighted=True)`, and the
+  distiller's crawl end-clustering FIX (crawl faces probe along their
+  own normals; spot04's sword tunnel and ydan's B1 crawls all link —
+  the tunnel interior is its own region, village ↔ tunnel ↔ training).
+  Exceptions renamed Route*/aliased Traverse* (one family). Contract
+  bump: SURFACE.md place bullet + MACHINE.md "The routed walk", both
+  per docs/30's ratified Contract impact. Tests 379 → 421 (real-o2r
+  pins: the crawl link, maze-region clearance).
+  **`tests/live/test_walk_live.py` is UNRUN** (SoH was down): a walk
+  probe behavior carries walk_to/reachable results out via
+  walk_result.json with zero-movement + elapsed measured in-body.
+  **Next session: run the live walk family (needs the game up + a file
+  loaded), then docs/34 (0.14.0), then the maze acceptance flight,
+  flag off, criteria 1–8.**
 
 - **THE NAV PROGRAM (2026-08-07 — FULLY RATIFIED, all three docs,
   all open calls as recommended: AJ, late that night, "ok both fully
@@ -187,11 +219,8 @@ silently-never-fires transition shape, twice).
   table, the boulder maze) produced a three-doc program, built in
   order: **docs/33** the dev harness (0.12.0 — BUILT and
   LIVE-VERIFIED the same night, see below); **docs/30** route-aware
-  walking (0.13.0, NEXT TO BUILD: server-side A* over the loaded
-  mesh with clearance as a combat-safety requirement, instant
-  zero-movement refusals, `walk_to`/`reachable` on the behavior
-  interface; the training-area maze is the acceptance mission;
-  backlog #3 rides along; developed against `tests/live/`);
+  walking (0.13.0 — BUILT the same night, see the entry above; live
+  pins pending; the training-area maze is the acceptance mission);
   **docs/34** the discovery grain (0.14.0: fog of war mirroring the
   game's own photographed predicate — overworld full-at-entry,
   dungeons room+floor presence-gated, Map/Compass widen, frontier
@@ -524,7 +553,11 @@ sixth flight ranked this list by felt pain, docs/26 has the reasoning;
    not awake/asleep, and that gap manufactured a false belief with
    fatal consequences. (The chest `opened` bit is this item's pattern
    landed for props: the game's own flag, on the census, refusals by
-   name — do the same with actor wake state.)
+   name — do the same with actor wake state.) **Half landed in 0.13.0:**
+   `nearest_enemy.moving` (census deltas, the watching eye's own
+   evidence) ships; the awake/asleep flag itself still needs the
+   wire-side patch — a sleeping patrol that hasn't stirred yet still
+   reads `moving: false`, which is exactly the sixth flight's trap.
 4. **Obstacle-aware ascend** — promote the sixth flight's retired
    spider-slalom (in `examples/sixth-flight/.../place_flight.py`) into
    traverse; straight-up is not enough on guarded walls. The ranged

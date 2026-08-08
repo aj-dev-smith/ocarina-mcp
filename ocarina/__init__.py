@@ -249,7 +249,42 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: trusting it would report a full-fidelity arrival that never
 #: happened. Rides the same SoH rebuild as the screenshot blit gating,
 #: which needed no ocarina change.
-OCARINA_VERSION = "0.12.2"
+#: 0.13.0: ROUTE-AWARE WALKING (dojo docs/30, ratified by AJ 2026-08-07
+#: with all open calls as recommended; built against the dev harness
+#: per docs/33). A contract bump: SURFACE.md's place principle extends
+#: one clause (within-region ROUTING is motor; refusals precede
+#: movement) and MACHINE.md gains "The routed walk". The region is the
+#: answer: `game.walk_to(x, z)` routes inside the current region and
+#: refuses everything else BEFORE movement, by name, in milliseconds —
+#: off-mesh, target off the map, target in another region (names it
+#: and the legs out), no in-region path, blocked by a census prop
+#: ("blocked by a treasure_chest at your 2 o'clock"; radii are
+#: LABELLED guesses until the collider wire rider). `game.reachable`
+#: is the same check with the walk removed — the election filter two
+#: flight bodies independently reinvented as blacklists. Routing is
+#: CLEARANCE-AWARE as a combat-safety requirement (wall-scrape
+#: slowdown got Link hit on AJ's watch): A* penalizes wall-adjacent
+#: polys, waypoints hold the adaptive offset min(desired,
+#: (width - link_diameter)/2) — midline in pinches, never refusing a
+#: corridor Link fits — and near-body-width corridors are reported as
+#: squeezes. The exception family renames to RouteRefused/RouteFailed
+#: with the Traverse names aliased (same classes; no graded body
+#: breaks). Riders: the localizer gains the STANDING gate (docs/28
+#: learning 4 closed — a floor far below Link is not the floor he is
+#: on; on_mesh/region/events/refusals all stop lying on actor
+#: surfaces); `nearest_enemy` gains judged `reach` (walkable / across
+#: a gap / up a climb / down a drop) and the `moving` bit (census
+#: deltas — NOT awake/asleep, which still needs the game's own flag:
+#: backlog #3's wire half); `game.actors(sighted=True)` puts seek.py's
+#: hand-rolled sight filter on the surface; and the distiller's crawl
+#: end-clustering gap is FIXED (crawl faces probe along their own
+#: normals — spot04's sword tunnel and ydan's B1 crawls all link;
+#: `oot://place` says "crawl through to", though traverse still
+#: refuses crawls as an honest not-yet). tests/live grows the walk
+#: family: the cliff refused cold with zero movement measured in-body,
+#: reachable agreeing with the walk, and a routed walk arriving
+#: map-verified.
+OCARINA_VERSION = "0.13.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

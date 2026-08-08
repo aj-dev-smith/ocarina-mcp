@@ -183,6 +183,34 @@ NEVER_PRESENTED = {
 }
 
 
+#: Census prop kinds a routed walk treats as SOLID OBSTACLES (docs/30,
+#: 0.13.0): the mesh knows floors, not the chest parked on one — these
+#: are the standing, solid kinds a route must detour or refuse by name,
+#: curated like OFFICIAL_NAMES and defaulting to NOT-an-obstacle (a
+#: kokiri child is solid too, but walking up to a person is a behavior's
+#: judgment, not a routing refusal). Values are XZ radii in units.
+#:
+#: HONESTY GAP, labelled per this file's discipline (docs/30 open call
+#: 6, ratified "later — write the guess down"): the wire carries actor
+#: POSITION, not collider dimensions, so every radius here is a GUESSED
+#: per-kind constant, not a measured one. The clean fix is a wire rider
+#: (collider radius/height per census entry — the 0.6.0 torrent
+#: principle); the chest-pose commission (docs/28 learning 5) wants the
+#: same patch. Until then a flight will price these guesses.
+OBSTACLE_RADII = {
+    0x000A: 30.0,   # treasure_chest — the wedge that named this feature
+    0x0125: 20.0,   # bush
+    0x0130: 55.0,   # rolling_boulder — corridor-filling (~90+ units of
+                    # maze corridor); it MOVES, so the pre-walk check is
+                    # a snapshot and the wedge reflex stays the mid-walk
+                    # answer (docs/30 honest not-yet: moving obstacles)
+    0x0141: 16.0,   # signpost
+    0x01B9: 16.0,   # gossip_stone
+    0x014E: 20.0,   # rock (the liftable ones)
+    0x0077: 25.0,   # tree — the trunk, not the canopy
+}
+
+
 def _resolve_name(actor_id: int, params=None) -> tuple[str, bool]:
     """(name, curated) for a census actor. `curated` False means the name
     is a placeholder standing in for a vocabulary gap."""
@@ -336,11 +364,30 @@ SCHEMA = {
                                 # directions clock-face; raw pos/yaw stay
                                 # body-side — the wire carried them since
                                 # first light, the gap was curation)
+        "moving": bool,         # visibly in motion (census position
+                                # deltas — the watching eye's own
+                                # evidence, docs/30's escort rider;
+                                # ABSENT until two samples can judge.
+                                # NOT awake/asleep: a sleeping patrol
+                                # that hasn't stirred reads False —
+                                # activation state needs the game's own
+                                # flag on the wire, backlog #3's
+                                # remaining half)
+        "reach": str,           # judged: walkable / across a gap /
+                                # up a climb / down a drop — the ground
+                                # under it, from where you stand
+                                # (docs/30 rider, ratified; sight-gated
+                                # by inheritance; ABSENT when the place
+                                # sense can't vouch)
     },
     "place": {                  # the place sense (docs/25; absent entity
                                 # when no map / no --o2r / pre-play)
         "region": str,          # stable region id (absent while off-mesh)
-        "on_mesh": bool,        # False = the map has no floor under you
+        "on_mesh": bool,        # False = you are not STANDING on mapped
+                                # floor: nothing below you at all, or a
+                                # floor far below (mid-air / an actor
+                                # surface — the 0.13.0 standing gate,
+                                # docs/28 learning 4)
         "x": float,             # exact self-pose: the self-pose exemption
         "y": float,             # (knowledge of OTHERS is where unfairness
         "z": float,             # lives; confidence about SELF is an
@@ -416,6 +463,65 @@ class Sightings:
 
     def sighted(self, key) -> bool:
         return key in self._keys
+
+
+class Motion:
+    """Visible-movement memory behind `nearest_enemy.moving` (0.13.0,
+    docs/30's escort rider — priced by the sixth flight: vine guards a
+    probe measured as "stationary" were sleeping patrols, and one killed
+    Link). Judged from consecutive census position deltas — the same
+    evidence a watching eye takes, no actor internals — over a short
+    window so a patrol's between-steps pause doesn't flicker the bit.
+    Answers None (digest ABSENT) until two samples far enough apart in
+    time exist to judge; a single glimpse cannot honestly say "still".
+
+    Server-session state like Sightings: trails clear on scene change
+    and leave with their actors. Mutated only via observe().
+    """
+
+    WINDOW_S = 0.7          # how far back the eye remembers
+    MIN_SPAN_S = 0.15       # two samples closer than this can't judge
+    EPS = 3.0               # XZ drift beyond this reads as motion
+                            # (inside it is animation jitter)
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._scene = None
+        self._trails: dict = {}      # actor key -> [(t, x, z), ...]
+
+    def observe(self, state: dict) -> None:
+        """Fold one raw snapshot in. Pre-play contributes nothing (the
+        attract demo is not the world)."""
+        if not state.get("save_loaded", False):
+            return
+        now = self._clock()
+        scene = state.get("scene")
+        if scene != self._scene:
+            self._scene = scene
+            self._trails.clear()
+        seen = set()
+        for a in state.get("actors") or []:
+            key, pos = a.get("key"), a.get("pos")
+            if key is None or not pos or len(pos) < 3:
+                continue
+            seen.add(key)
+            trail = self._trails.setdefault(key, [])
+            trail.append((now, float(pos[0]), float(pos[2])))
+            while trail and trail[0][0] < now - self.WINDOW_S:
+                trail.pop(0)
+        for key in [k for k in self._trails if k not in seen]:
+            del self._trails[key]
+
+    def moving(self, key):
+        """True/False when the window can judge `key`; None when it
+        cannot (unknown actor, one sample, or samples too close in
+        time — absence, never a guess)."""
+        trail = self._trails.get(key)
+        if not trail or trail[-1][0] - trail[0][0] < self.MIN_SPAN_S:
+            return None
+        _t, x, z = trail[-1]
+        return any(math.hypot(x - px, z - pz) > self.EPS
+                   for (_pt, px, pz) in trail[:-1])
 
 
 def spawn_events(fresh: list, seen: SeenKinds) -> list:
@@ -558,7 +664,8 @@ def nearest_enemy_slot(state: dict, sightings: Sightings) -> dict | None:
     return min(enemies, key=lambda a: a.get("dist_xz", float("inf")))
 
 
-def digest(state: dict, sightings: Sightings, place: dict | None = None) -> dict:
+def digest(state: dict, sightings: Sightings, place: dict | None = None,
+           motion: "Motion | None" = None, reach=None) -> dict:
     """Raw DojoLink snapshot -> the curated digest guards and the mind see.
 
     Behaviors see the raw snapshot server-side at 20 Hz; this is the
@@ -567,7 +674,11 @@ def digest(state: dict, sightings: Sightings, place: dict | None = None) -> dict
     required, not defaulted: a call site that forgot it would be a call
     site quietly reinstating X-ray vision. `place` is the PlaceSense
     sample for this snapshot (docs/25), or None when the sense has
-    nothing honest to say — absent entity, never a guess.
+    nothing honest to say — absent entity, never a guess. `motion` and
+    `reach` are the 0.13.0 riders (docs/30): the Motion tracker behind
+    `nearest_enemy.moving`, and a callable(actor) -> judged string (the
+    runtime wires it to PlaceSense.judge_reach) behind
+    `nearest_enemy.reach`; either None leaves its field absent.
     """
     player = state.get("player") or {}
     flags1 = player.get("state_flags1", 0)
@@ -623,6 +734,19 @@ def digest(state: dict, sightings: Sightings, place: dict | None = None) -> dict
             out["nearest_enemy"]["bearing"] = clock_bearing(
                 float(ppos[0]), float(ppos[2]), int(player["yaw"]),
                 float(apos[0]), float(apos[2]))
+        # The 0.13.0 riders, both ABSENT rather than guessed when their
+        # source can't judge. Sight-gated by inheritance: they annotate
+        # the slot the sight predicate already filled, so neither can
+        # leak an unseen actor — they can only stop lying about a seen
+        # one (docs/30's fairness argument, verbatim).
+        if motion is not None:
+            judged = motion.moving(near.get("key"))
+            if judged is not None:
+                out["nearest_enemy"]["moving"] = judged
+        if reach is not None:
+            judged = reach(near)
+            if judged is not None:
+                out["nearest_enemy"]["reach"] = judged
     return out
 
 

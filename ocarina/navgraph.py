@@ -364,10 +364,40 @@ def distill(mesh: CollisionMesh) -> dict:
         y_lo = min(pt[1] for pt in pts)
         y_hi = max(pt[1] for pt in pts)
         if kind == "crawl":
-            # crawl tunnels connect horizontally: link the XZ extremes
-            xs = sorted(pts, key=lambda pt: (pt[0], pt[2]))
-            lo_regions = regions_near(xs[: len(xs) // 2])
-            hi_regions = regions_near(xs[len(xs) // 2:]) - lo_regions
+            # A crawlspace's flagged polys are the entrance FACE quads —
+            # a ~32x24 plate per side of a doorway-thick wall, its normal
+            # pointing along the crawl direction (spot04's sword tunnel,
+            # measured 2026-08-07: two quads 20 units apart per mouth).
+            # So the honest link is the game's own predicate: press this
+            # face, emerge on the floor BEHIND it. Probe along the face
+            # normal on both sides for the floor region in front and the
+            # floor region behind. The old rule (vertex-proximity over
+            # lexicographic (x, z) halves) put both of a mouth's regions
+            # in one half and left every real tunnel unlinked — the
+            # end-clustering gap, two scenes of evidence (dojo docs/30,
+            # fixed 2026-08-07).
+            n_acc = [0.0, 0.0]
+            for p in members:
+                n_acc[0] += p.normal[0]
+                n_acc[1] += p.normal[2]
+            n_len = math.hypot(*n_acc)
+            face_cen = [sum(pt[i] for pt in pts) / len(pts) for i in range(3)]
+            lo_regions, hi_regions = set(), set()
+            if n_len > 1e-6:                # mixed-facing cluster: honest
+                nx, nz = n_acc[0] / n_len, n_acc[1] / n_len    # unlinked
+                for side, bag in ((1.0, lo_regions), (-1.0, hi_regions)):
+                    for d in (30.0, 60.0, 90.0):
+                        probe = [(face_cen[0] + side * nx * d,
+                                  face_cen[2] + side * nz * d)]
+                        found = regions_beneath(probe, y_lo - LINK_Y,
+                                                y_hi + LINK_Y)
+                        if found:
+                            # nearest floor to the mouth's own sill —
+                            # a probe can land over stacked floors
+                            bag.add(min(found,
+                                        key=lambda r: abs(found[r] - y_lo)))
+                            break
+            hi_regions -= lo_regions
         else:
             # a climb column can be exited at ANY floor along its span, so
             # link every region XZ-near the column with y inside the span

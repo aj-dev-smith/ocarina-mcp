@@ -42,19 +42,37 @@ Honesty gaps, flagged rather than hidden (the senses.py discipline):
   `room` on the wire, region->room partition, gate the document.
 - Localization is XZ point-in-poly with a foot tolerance over the
   COLLISION MESH ONLY — actor surfaces (the Deku Tree atrium's floor
-  web, pushblocks, platforms) are not in it. So Link standing on one
-  localizes to whatever mesh floor lies below, and a lateral step can
-  swing that answer hundreds of units down. `region` and `on_mesh` are
-  still reported from that fix; only `fell` is guarded, by requiring
-  Link's OWN y to have dropped too (the ninth flight narrated six falls
-  Link never took — docs/28). Unchanged and unguarded: mid-air
-  localization (Link over a lower floor reads as being on it), and
-  `on_mesh` remains honest about "no floor below at all" (the void,
-  unmapped space), not about airborne-or-actor-borne-over-floor. The
-  real fix is consulting the census for the surface Link is standing
-  on; that is a design item, not a patch.
+  web, pushblocks, platforms) are not in it. As of 0.13.0 (docs/30
+  order-of-work step 2, closing docs/28 learning 4) the fix carries a
+  STANDING check: when Link's own y is more than STAND_TOL above the
+  located floor he is airborne or actor-borne, NOT in that region — so
+  `on_mesh` reads False with `region` absent, the routing verbs refuse
+  with the height named instead of refusing from a wrong region, and
+  the event anchors hold their last standing fix (the six false `fell`
+  narrations can no longer even set up). Still open: WHICH surface Link
+  is actually on (consulting the census for it is a design item), and a
+  region whose floors stack in y can mis-pick under the standing band.
 - `fell` is suppressed while a traverse leg is declared — the primitive
   verifies its own arrival and its failure is the louder story.
+
+0.13.0, THE ROUTED WALK (dojo docs/30, RATIFIED by AJ 2026-08-07, all
+open calls as recommended): the region is already the answer — a target
+in another walkable component is not walk-reachable BY CONSTRUCTION, and
+a same-region target already has `route_in_region`'s A*. This module
+grows `resolve_walk` (the shared target-validation front end; all of
+`game.walk_to`'s refusal grammar lives here, before any movement) and
+clearance-aware routing (a combat-safety requirement, not a quality
+knob — AJ's flight testimony: wall-scrape slowed Link enough to get hit.
+The A* penalizes wall-adjacent polys and waypoints hold an ADAPTIVE
+offset from region boundaries: the desired offset in open space, the
+midline in pinches, never refusing a corridor Link physically fits —
+the maze recon formula, `min(desired, (width - link_diameter) / 2)`).
+The exception family is renamed Route*/the Traverse names aliased (open
+call 5): one refusal family, one `except` clause, no graded body broken.
+Fog coherence (docs/34, ratified as one story): when the discovery grain
+lands in 0.14.0, refusals must degrade to "somewhere you haven't been"
+instead of naming an undiscovered region — the naming here is the
+pre-fog form.
 """
 
 from __future__ import annotations
@@ -100,17 +118,54 @@ FELL_MIN_DROP = 60.0
 #: mid-stride noise) — ported from the lab localizer.
 FOOT_TOL = 60.0
 
+#: How far Link's own y may sit ABOVE the located floor and still count
+#: as STANDING on it (docs/28 learning 4, fixed 0.13.0). Ordinary jumps
+#: peak well under this; the atrium web hangs ~940 over the B2 floor.
+#: Above it, the fix is airborne-or-actor-borne: not a place judgment.
+STAND_TOL = 80.0
 
-class TraverseRefused(Exception):
-    """The request is illegal BY THE MAP (off-mesh, unknown name,
-    non-adjacent, candidate edge) or unsupported: refused cleanly before
-    any movement. Never approximated — silent approximation of an
-    illegal request is the v6 failure wearing a helpful face."""
+#: Link's collision cylinder is ~24 units across (maze recon, docs/30).
+LINK_DIAMETER = 24.0
+
+#: The offset a routed walk tries to hold from region boundaries — the
+#: combat-safety requirement (docs/30 amendment: wall-scrape slowdown is
+#: what turned "boulder nearby" into "boulder hit"). ADAPTIVE by the
+#: recon formula min(desired, (width - link_diameter) / 2): held in open
+#: space, the midline in pinches, and a corridor Link fits is NEVER
+#: refused (a fixed 30-unit rule refuses the acceptance course itself).
+DESIRED_CLEARANCE = 30.0
+
+#: A* cost multiplier cap for polys closer to a wall than the desired
+#: clearance (cost grows linearly toward this as clearance drops to 0).
+WALL_GRAZE_PENALTY = 2.0
+
+#: A corridor narrower than this around a waypoint is presented as "a
+#: squeeze" — presentable truth: a sighted player sees narrowness
+#: (docs/30 maze recon; Link himself is ~24 across).
+SQUEEZE_WIDTH = 36.0
 
 
-class TraverseFailed(Exception):
-    """The leg was legal but did not complete (grab never took, stalled
-    on the wall, arrived somewhere else). Movement may have happened."""
+class RouteRefused(Exception):
+    """The request is illegal BY THE MAP (off-mesh, unknown name, a
+    different region, non-adjacent, candidate edge) or unsupported:
+    refused cleanly before any movement. Never approximated — silent
+    approximation of an illegal request is the v6 failure wearing a
+    helpful face. Renamed from TraverseRefused at 0.13.0 (docs/30 open
+    call 5: one refusal family for traverse AND walk_to); the Traverse
+    name is aliased below, so every graded body's `except` still fits."""
+
+
+class RouteFailed(Exception):
+    """The route was legal but did not complete (grab never took,
+    stalled, wedged, arrived somewhere else). Movement may have
+    happened. Renamed from TraverseFailed at 0.13.0; alias below."""
+
+
+#: The pre-0.13.0 names, aliased not subclassed: one family, one class
+#: identity, so `except TraverseRefused` and `except RouteRefused` catch
+#: exactly the same refusals (docs/30 open call 5, as recommended).
+TraverseRefused = RouteRefused
+TraverseFailed = RouteFailed
 
 
 # -- judgments (the presented forms) ------------------------------------------
@@ -234,6 +289,14 @@ class PlaceGraph:
         self._region_polys: dict = {}
         for pi, p in self.polys.items():
             self._region_polys.setdefault(p["r"], []).append(pi)
+        # Region boundary segments (edges owned by exactly one floor poly)
+        # — the wall-distance oracle behind clearance-aware routing
+        # (docs/30: clearance is a combat-safety requirement). Distilled
+        # graphs have carried these since 0.7.0; an old graph without
+        # them routes as before, with no clearance shaping.
+        self._boundaries = {int(k): v for k, v in
+                            (graph.get("region_boundaries") or {}).items()}
+        self._clearance: dict = {}      # rid -> {poly id -> wall distance}
 
     def region_name(self, r: dict) -> str:
         return f"{self.scene}:{r['name']}"
@@ -275,11 +338,117 @@ class PlaceGraph:
                     out.append({"edge": e, "direction": "down", "to": f})
         return out
 
-    def route_in_region(self, rid: int, start, goal_xz) -> list:
+    @staticmethod
+    def _seg_dist_xz(seg, x: float, z: float) -> float:
+        """XZ distance from (x, z) to one boundary segment [a, b]."""
+        a, b = seg
+        ax, az, bx, bz = a[0], a[2], b[0], b[2]
+        dx, dz = bx - ax, bz - az
+        den = dx * dx + dz * dz
+        if den < 1e-12:
+            return math.hypot(x - ax, z - az)
+        t = max(0.0, min(1.0, ((x - ax) * dx + (z - az) * dz) / den))
+        return math.hypot(x - (ax + t * dx), z - (az + t * dz))
+
+    def wall_distance(self, rid: int, x: float, z: float):
+        """(distance, closest boundary point) from (x, z) to region
+        `rid`'s nearest boundary segment, or (inf, None) when the graph
+        carries no boundaries (pre-0.7.0 shape) — corridor width around
+        a point is about twice this, which is what the adaptive
+        clearance formula and the squeeze judgment both read."""
+        best, best_pt = math.inf, None
+        for seg in self._boundaries.get(rid) or ():
+            a, b = seg
+            ax, az, bx, bz = a[0], a[2], b[0], b[2]
+            dx, dz = bx - ax, bz - az
+            den = dx * dx + dz * dz
+            if den < 1e-12:
+                qx, qz = ax, az
+            else:
+                t = max(0.0, min(1.0, ((x - ax) * dx + (z - az) * dz) / den))
+                qx, qz = ax + t * dx, az + t * dz
+            d = math.hypot(x - qx, z - qz)
+            if d < best:
+                best, best_pt = d, (qx, qz)
+        return best, best_pt
+
+    def polys_near(self, rid: int, x: float, z: float, radius: float) -> set:
+        """Region polys whose centroid lies within XZ `radius` of
+        (x, z) — the block set for a census-prop detour (game.walk_to)."""
+        out = set()
+        for pi in self._region_polys.get(rid, ()):
+            cen = self.polys[pi]["cen"]
+            if math.hypot(cen[0] - x, cen[2] - z) <= radius:
+                out.add(pi)
+        return out
+
+    def _clearance_of(self, rid: int) -> dict:
+        """poly id -> XZ distance from its centroid to the region's
+        nearest boundary segment; computed once per region, cached."""
+        cache = self._clearance.get(rid)
+        if cache is None:
+            segs = self._boundaries.get(rid) or ()
+            cache = {}
+            for pi in self._region_polys.get(rid, ()):
+                cen = self.polys[pi]["cen"]
+                cache[pi] = min((self._seg_dist_xz(s, cen[0], cen[2])
+                                 for s in segs), default=math.inf)
+            self._clearance[rid] = cache
+        return cache
+
+    def hold_clearance(self, rid: int, x: float, z: float, y_ref: float):
+        """Nudge (x, z) away from region `rid`'s nearest boundary until
+        it holds DESIRED_CLEARANCE — or until the midline, whichever
+        comes first: the adaptive offset (docs/30 maze recon,
+        `min(desired, (width - link_diameter) / 2)`) implemented as
+        hill-climbing on wall distance, so a pinch converges to its
+        middle and is never refused. Every step is locate-checked
+        against the region: the nudge can never leave the floor it is
+        smoothing (the v6 lesson, applied to route shaping)."""
+        px, pz = x, z
+        for _ in range(10):
+            d, q = self.wall_distance(rid, px, pz)
+            if q is None or d >= DESIRED_CLEARANCE or d <= 1e-6:
+                break
+            ux, uz = (px - q[0]) / d, (pz - q[1]) / d
+            step = min(DESIRED_CLEARANCE - d, 8.0)
+            cx, cz = px + ux * step, pz + uz * step
+            hit = self.locate(cx, y_ref + FOOT_TOL, cz)
+            if hit is None or hit[0]["id"] != rid:
+                break
+            d2, _ = self.wall_distance(rid, cx, cz)
+            if d2 <= d + 0.25:
+                break                     # the midline (or a pocket): done
+            px, pz = cx, cz
+        return px, pz
+
+    def squeezes_along(self, rid: int, waypoints) -> list:
+        """The waypoints whose corridor is near Link's own diameter —
+        presentable truth (a sighted player sees narrowness), reported
+        so the walk can say "a squeeze" instead of silently threading
+        it. Width is judged as twice the wall distance (the midline
+        approximation the clearance hold converges to)."""
+        out = []
+        for (x, z) in waypoints:
+            d, q = self.wall_distance(rid, x, z)
+            if q is not None and d * 2.0 < SQUEEZE_WIDTH:
+                out.append({"at": (round(x, 1), round(z, 1)),
+                            "width": round(d * 2.0, 1)})
+        return out
+
+    def route_in_region(self, rid: int, start, goal_xz,
+                        blocked=frozenset()) -> list:
         """Poly-centroid waypoints from `start` (x, y, z) to the region
         poly nearest `goal_xz`, staying inside region `rid`. This is the
         motor half of the cognition/motor line: steering inside a known
-        region is foot placement, not route choice."""
+        region is foot placement, not route choice.
+
+        Clearance-aware since 0.13.0 (docs/30): wall-adjacent polys cost
+        extra (WALL_GRAZE_PENALTY) and every waypoint is nudged to hold
+        the adaptive offset from the region boundary — wall-scrape
+        slowdown is a combat-safety hazard, not an aesthetic one.
+        `blocked` polys are avoided entirely (the census-prop detour;
+        the start poly is exempt — Link routes from wherever he stands)."""
         import heapq
         members = self._region_polys.get(rid) or []
         if not members:
@@ -290,8 +459,21 @@ class PlaceGraph:
 
         si = min(members, key=lambda i: xz_dist(self.polys[i]["cen"],
                                                 (start[0], start[2])))
-        gi = min(members, key=lambda i: xz_dist(self.polys[i]["cen"], goal_xz))
+        open_members = [i for i in members if i not in blocked or i == si]
+        if not open_members:
+            return []
+        gi = min(open_members,
+                 key=lambda i: xz_dist(self.polys[i]["cen"], goal_xz))
         goal = self.polys[gi]["cen"]
+        clearance = self._clearance_of(rid)
+
+        def step_cost(j, base: float) -> float:
+            clr = clearance.get(j, math.inf)
+            if clr < DESIRED_CLEARANCE:
+                base *= 1.0 + WALL_GRAZE_PENALTY * (
+                    (DESIRED_CLEARANCE - clr) / DESIRED_CLEARANCE)
+            return base
+
         g = {si: 0.0}
         came = {}
         pq = [(math.dist(self.polys[si]["cen"], goal), si)]
@@ -310,9 +492,10 @@ class PlaceGraph:
                 continue
             closed.add(cur)
             for nb in self.polys[cur]["adj"]:
-                if self.polys.get(nb, {}).get("r") != rid:
+                if self.polys.get(nb, {}).get("r") != rid or nb in blocked:
                     continue
-                t = g[cur] + math.dist(self.polys[cur]["cen"], self.polys[nb]["cen"])
+                t = g[cur] + step_cost(
+                    nb, math.dist(self.polys[cur]["cen"], self.polys[nb]["cen"]))
                 if t < g.get(nb, math.inf):
                     g[nb] = t
                     came[nb] = cur
@@ -320,15 +503,19 @@ class PlaceGraph:
         if path is None:
             return []
         # Simplify: unsmoothed centroid polylines zigzag (lab v0 note);
-        # keep a waypoint only when it moves ~a body-length.
-        points = [(self.polys[i]["cen"][0], self.polys[i]["cen"][2]) for i in path]
-        out = []
+        # keep a waypoint only when it moves ~a body-length. Then hold
+        # clearance on the survivors (each carries its poly's y as the
+        # locate reference for the nudge's stay-in-region check).
+        points = [(self.polys[i]["cen"][0], self.polys[i]["cen"][2],
+                   self.polys[i]["cen"][1]) for i in path]
+        kept = []
         for pt in points:
-            if not out or math.hypot(pt[0] - out[-1][0], pt[1] - out[-1][1]) >= 60.0:
-                out.append(pt)
-        if points and (not out or out[-1] != points[-1]):
-            out.append(points[-1])
-        return out
+            if not kept or math.hypot(pt[0] - kept[-1][0],
+                                      pt[1] - kept[-1][1]) >= 60.0:
+                kept.append(pt)
+        if points and (not kept or kept[-1] != points[-1]):
+            kept.append(points[-1])
+        return [self.hold_clearance(rid, px, pz, py) for (px, pz, py) in kept]
 
 
 # -- the sense -----------------------------------------------------------------
@@ -449,7 +636,12 @@ class PlaceSense:
         out = {"on_mesh": False, "x": x, "y": y, "z": z,
                "facing": yaw, "heading": heading_name(yaw)}
         hit = graph.locate(x, y, z)
-        if hit is not None:
+        # STANDING gate (0.13.0, docs/28 learning 4): a floor far below
+        # Link is not the floor he is ON — mid-air, or an actor surface
+        # (the atrium web hangs ~940 over the B2 floor). on_mesh False +
+        # region absent is the honest answer; naming the region below
+        # him was the lie the six false narrations grew from.
+        if hit is not None and y - hit[1] <= STAND_TOL:
             out["on_mesh"] = True
             out["region"] = graph.region_name(hit[0])
         return out
@@ -474,6 +666,13 @@ class PlaceSense:
             return []
         x, y, z = (float(v) for v in pos)
         hit = graph.locate(x, y, z)
+        # Not STANDING on the located floor (mid-air, or an actor
+        # surface like the atrium web): no place judgment at all —
+        # narrating the floor far below Link is how the ninth flight's
+        # false stories started. The anchors keep the last standing fix,
+        # so a genuine fall still narrates on LANDING.
+        if hit is not None and y - hit[1] > STAND_TOL:
+            hit = None
         flags1 = player.get("state_flags1", 0)
         on_wall = bool(flags1 & PLAYER_STATE1_ON_A_WALL)  # climbing != falling
         events = []
@@ -507,6 +706,47 @@ class PlaceSense:
             self._prev = (scene, rid, floor_y, on_wall, y)
         return events
 
+    # -- the reach rider (docs/30, ratified) ------------------------------------
+
+    def judge_reach(self, state: dict, actor: dict):
+        """The judged `reach` vocabulary for a presented actor — is the
+        GROUND UNDER IT walkable from where Link stands? Returns
+        "walkable" / "across a gap" / "up a climb" / "down a drop", or
+        None when the sense has nothing honest to say (no map, Link not
+        standing on the mesh, the actor over nothing mapped). This is
+        the text form of the glance a sighted player takes before
+        electing a target: judged words only, no numbers, and it
+        annotates only entities the digest already presents — so it is
+        sight-gated by inheritance and cannot leak an unseen actor.
+        A flying enemy is judged by the floor beneath it: honest — the
+        walk can reach UNDER it, which is what election needs."""
+        if not state or not state.get("save_loaded", False):
+            return None
+        graph = self.graph_for(state.get("scene", -1))
+        if graph is None:
+            return None
+        player = state.get("player") or {}
+        ppos, apos = player.get("pos"), actor.get("pos")
+        if not ppos or not apos or len(apos) < 3:
+            return None
+        x, y, z = (float(v) for v in ppos)
+        hit = graph.locate(x, y, z)
+        if hit is None or y - hit[1] > STAND_TOL:
+            return None
+        rid = hit[0]["id"]
+        ahit = graph.locate(float(apos[0]), float(apos[1]) + FOOT_TOL,
+                            float(apos[2]))
+        if ahit is None:
+            return None
+        arid = ahit[0]["id"]
+        if arid == rid:
+            return "walkable"
+        for leg in graph.legs_from(rid):
+            if leg["to"] == arid:
+                return ("up a climb" if leg["direction"] == "up"
+                        else "down a drop")
+        return "across a gap"
+
     # -- traverse support -------------------------------------------------------
 
     def begin_leg(self, edge_name: str) -> None:
@@ -517,34 +757,108 @@ class PlaceSense:
         with self._lock:
             self._leg = None
 
+    def _routing_fix(self, state: dict, verb: str):
+        """The shared target-validation FRONT END (docs/30: one refusal
+        family for both routing verbs): map available, player present,
+        Link localized AND standing. Returns (graph, region, (x, y, z))
+        or raises RouteRefused with the verb named."""
+        if self.o2r_path is None:
+            raise RouteRefused(
+                f"place sense not available: the server was started without "
+                f"--o2r, so there is no map to validate against — {verb} "
+                f"refuses rather than guesses")
+        scene = (state or {}).get("scene", -1)
+        graph = self.graph_for(scene)
+        if graph is None:
+            raise RouteRefused(
+                f"no map for scene 0x{scene:02X} (see the journal "
+                f"diagnostic) — {verb} refuses rather than guesses")
+        player = (state or {}).get("player") or {}
+        pos = player.get("pos")
+        if not pos:
+            raise RouteRefused("no player in the snapshot")
+        x, y, z = (float(v) for v in pos)
+        hit = graph.locate(x, y, z)
+        if hit is None:
+            raise RouteRefused(
+                "you are OFF THE MAP here (no floor below within "
+                "tolerance: the void, mid-air, or unmapped space) — get "
+                "onto known floor first")
+        region, floor_y = hit
+        if y - floor_y > STAND_TOL:
+            # docs/28 learning 4, fixed 0.13.0: refusing FROM the floor
+            # far below Link would name a region he is not in — refuse
+            # with the height instead, so the story is true.
+            raise RouteRefused(
+                f"you are {y - floor_y:.0f} units ABOVE the mapped floor — "
+                f"standing on something the map cannot see (an actor "
+                f"surface?) or mid-air; the map cannot vouch for a route "
+                f"from here")
+        return graph, region, (x, y, z)
+
+    def resolve_walk(self, state: dict, x: float, z: float,
+                     blocked=frozenset()) -> dict:
+        """Validate a routed-walk request (docs/30) — ALL of walk_to's
+        map refusals live here, BEFORE any movement, each in
+        milliseconds with a reason instead of 12 s of wall-grinding:
+        no map / you off the map or not standing / target off the map /
+        target in another region (the cliff — names the region and the
+        legs out of yours) / no path inside the region. Returns
+        {graph, rid, region, waypoints, squeezes, target}; `waypoints`
+        end at the exact target. `blocked` polys are detoured (the
+        census-prop pass in game.walk_to). Fog note (docs/34, ratified
+        as one story): when the discovery grain lands, the cross-region
+        refusal must stop naming an UNDISCOVERED region and degrade to
+        "somewhere you haven't been" — still instant, still zero
+        movement."""
+        graph, region, pos = self._routing_fix(state, "the routed walk")
+        rid = region["id"]
+        tx, tz = float(x), float(z)
+        # Localize the target at Link's own level first (a walk stays
+        # level-ish by construction); if nothing is there, look with an
+        # open ceiling so a ledge ABOVE still gets NAMED in the refusal
+        # rather than reading as the void.
+        hit = graph.locate(tx, pos[1], tz)
+        if hit is None:
+            hit = graph.locate(tx, 1e12, tz)
+            if hit is None:
+                raise RouteRefused(
+                    f"target ({tx:.0f}, {tz:.0f}) is OFF THE MAP — the "
+                    f"void, or space the map does not cover; there is "
+                    f"nothing there to walk to")
+        target_region = hit[0]
+        if target_region["id"] != rid:
+            legs = graph.legs_from(rid)
+            known = sorted({graph.edge_name(l["edge"]) for l in legs})
+            raise RouteRefused(
+                f"target is in {graph.region_name(target_region)}, not "
+                f"{graph.region_name(region)} — not walk-reachable: "
+                f"regions are separate walkable components by "
+                f"construction. The ways out from here: "
+                f"{', '.join(known) if known else 'no linked edges'} "
+                f"(cross-region routing is yours, over oot://place)")
+        waypoints = graph.route_in_region(rid, pos, (tx, tz),
+                                          blocked=blocked)
+        if not waypoints:
+            raise RouteRefused(
+                f"no path inside {graph.region_name(region)} from where "
+                f"you stand to ({tx:.0f}, {tz:.0f}) — a pinched or "
+                f"degenerate component: as much an instrument diagnostic "
+                f"as a refusal")
+        if math.hypot(waypoints[-1][0] - tx, waypoints[-1][1] - tz) > 1.0:
+            waypoints = waypoints + [(tx, tz)]
+        return {"graph": graph, "rid": rid,
+                "region": graph.region_name(region),
+                "waypoints": waypoints,
+                "squeezes": graph.squeezes_along(rid, waypoints),
+                "target": (tx, tz)}
+
     def resolve_traverse(self, state: dict, target: str) -> dict:
         """Validate a traverse request against the map — ALL refusal
         semantics live here, before any movement (docs/25: refusal is a
         clean error, never best-effort approximation). Returns the leg:
         {graph, edge, direction, from_rid, to_rids, waypoints, at}."""
-        if self.o2r_path is None:
-            raise TraverseRefused(
-                "place sense not available: the server was started without "
-                "--o2r, so there is no map to validate against — traverse "
-                "refuses rather than guesses")
-        scene = (state or {}).get("scene", -1)
-        graph = self.graph_for(scene)
-        if graph is None:
-            raise TraverseRefused(
-                f"no map for scene 0x{scene:02X} (see the journal "
-                f"diagnostic) — traverse refuses rather than guesses")
-        player = (state or {}).get("player") or {}
-        pos = player.get("pos")
-        if not pos:
-            raise TraverseRefused("no player in the snapshot")
-        x, y, z = (float(v) for v in pos)
-        hit = graph.locate(x, y, z)
-        if hit is None:
-            raise TraverseRefused(
-                "you are OFF THE MAP here (no floor below within "
-                "tolerance: the void, mid-air, or unmapped space) — get "
-                "onto known floor before traversing")
-        region, _floor_y = hit
+        graph, region, (x, y, z) = self._routing_fix(state, "traverse")
         rid = region["id"]
 
         name = target if ":" in target else f"{graph.scene}:{target}"
@@ -682,11 +996,19 @@ class PlaceSense:
             for leg in graph.legs_from(r["id"]):
                 e = leg["edge"]
                 to = graph.regions[leg["to"]]
-                ways.append(
-                    f"{e['kind']} {'up' if leg['direction'] == 'up' else 'down'} "
-                    f"to {graph.region_name(to)} — "
-                    f"{judge_height(e['y_hi'] - e['y_lo'])} of climb "
-                    f"({graph.edge_name(e)})")
+                if e["kind"] == "crawl":
+                    # A crawl is horizontal — "up/down" would be the
+                    # linker's bookkeeping leaking into narration.
+                    # (Linked since 0.13.0's end-clustering fix; still
+                    # an honest not-yet to traverse.)
+                    ways.append(f"crawl through to {graph.region_name(to)} "
+                                f"({graph.edge_name(e)})")
+                else:
+                    ways.append(
+                        f"{e['kind']} {'up' if leg['direction'] == 'up' else 'down'} "
+                        f"to {graph.region_name(to)} — "
+                        f"{judge_height(e['y_hi'] - e['y_lo'])} of climb "
+                        f"({graph.edge_name(e)})")
             entry = {
                 "region": name,
                 "size": judge_size(r["area"]),

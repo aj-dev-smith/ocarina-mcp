@@ -47,6 +47,20 @@ boot/attach, a `dev_cheat` line per call) and refused outright on a
 repo declaring `"scored": true` in identity.json. Savestates stay
 absent in every mode.
 
+**Amended 2026-08-07 (ocarina 0.13.0): ROUTE-AWARE WALKING** — dojo
+docs/30, ratified by AJ late the same night together with docs/34, all
+open calls as recommended ("ok both fully ratified with your
+recommended approaches"; the ninth flight's wall-grinding and AJ's
+"you're fully blind to the actual shape of the places you're in" are
+the evidence base). The place principle below extends one clause:
+within-region ROUTING is motor, and refusals precede movement. The
+behavior interface gains `walk_to`/`reachable` (MACHINE.md, "The
+routed walk"); the digest's `nearest_enemy` gains the judged `reach`
+field and the `moving` bit (the escort riders — both sight-gated by
+inheritance: they annotate the slot the sight predicate already
+filled). No new tool, no new resource, no new event category;
+`oot://place` and its reveal grain are deliberately untouched.
+
 ## The goal (AJ, verbatim in spirit)
 
 1. Enable inputs via the behavior machine.
@@ -96,12 +110,16 @@ computes every event; detection is free via GameInteractor hooks.
   graphs distill from the scene's own collision data; identifiers are
   deterministic (geometry-derived) so mind-side knowledge accrues on
   them; evocative names are the mind's job. Cross-region ROUTING is
-  cognition (the mind's, over `oot://place`); within-region steering
-  and single named legs are motor (`traverse`, MACHINE.md), and
-  traverse refuses anything the map does not vouch for — off-mesh,
-  unverified candidates — BEFORE moving. Corollary (ruled 2026-08-03):
-  mind-side distillation of game data files is CONTRABAND in scored
-  play, exactly as savestates are — the lab pipeline is dev tooling.
+  cognition (the mind's, over `oot://place`); within-region steering,
+  within-region ROUTING, and single named legs are motor (`traverse`
+  and `walk_to`, MACHINE.md — docs/30, 2026-08-07: the line does not
+  move, it is restated one level down), and both verbs refuse anything
+  the map does not vouch for — off-mesh, unverified candidates, a
+  target in another region — BEFORE moving. Corollary (ruled
+  2026-08-03): mind-side distillation of game data files is CONTRABAND
+  in scored play, exactly as savestates are — the lab pipeline is dev
+  tooling; docs/30 landing `walk_to` converts the ninth flight's
+  mesh-mined waypoints from contraband into a legal sense.
 - **No pad verb. Ever.** The mind acts only by machine states; behaviors
   act at 20 Hz inside the server.
 - **Benchmark purity.** No savestate/load, no trial-drill, no
