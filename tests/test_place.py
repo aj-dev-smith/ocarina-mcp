@@ -515,12 +515,15 @@ class TestRuntimeAndServerIntegration(unittest.TestCase):
         self.core = ServerCore(self.game, self.runtime, self.log)
 
     def test_runtime_narrates_region_entered(self):
+        # Scene 0 is ydan's id — a FOGGED scene under docs/34 (0.14.0),
+        # so the first standing fix narrates discovery AND arrival: the
+        # runtime attaches a real Discovery ledger to the temp repo.
         self.game.state()                # observer refreshes _last_state
         self.runtime.tick()
         places = self.log.tail(category="place")
-        self.assertEqual(len(places), 1)
-        self.assertEqual(places[0]["cue"], "region_entered")
-        self.assertEqual(places[0]["region"], LOWER)
+        self.assertEqual([p["cue"] for p in places],
+                         ["region_discovered", "region_entered"])
+        self.assertEqual([p["region"] for p in places], [LOWER, LOWER])
 
     def test_digest_carries_place(self):
         self.game.state()
@@ -539,11 +542,19 @@ class TestRuntimeAndServerIntegration(unittest.TestCase):
         self.assertIn("place_sense", st)
 
     def test_place_resource_document(self):
+        # Scene 0 = ydan = FOGGED (docs/34): the upper floor is
+        # undiscovered, so it is ABSENT from the document — the vine up
+        # to it presents as a frontier leg, edge name kept (the wall is
+        # visible from here), destination unnamed.
         body = self._read("oot://place")
         self.assertEqual(body["you"]["region"], LOWER)
         regions = {r["region"]: r for r in body["regions"]}
-        self.assertIn(UPPER, regions)
+        self.assertNotIn(UPPER, regions,
+                         "an unvisited region must be ABSENT, not greyed")
         self.assertTrue(any(VINE in w for w in regions[LOWER]["ways"]))
+        self.assertTrue(any("destination unknown" in w
+                            for w in regions[LOWER]["ways"]))
+        self.assertNotIn(UPPER, str(body), "no leak through any field")
         # No raw coordinates in the presented document (self-pose lives
         # in oot://state; names carry quantized centroids by design).
         self.assertNotIn("centroid", str(body))

@@ -31,6 +31,17 @@ classes — no graded body's `except` breaks); the digest's
 unchanged and demoted in documentation to the deliberate unrouted
 override.
 
+**Amended 2026-08-07 (ocarina 0.14.0, dojo docs/34 — the discovery
+grain; ratified with docs/30 as one story):** the `place` event
+category grows the `region_discovered` cue (first presence in a fogged
+scene's region, once per save line — the journal's exploration
+record); `nearest_enemy.reach`'s judged vocabulary grows "somewhere
+you haven't been" (the fog form); and the routed walk's cross-region
+refusal degrades to the same phrase for undiscovered regions — still
+instant, still before any movement. Discovery is save-line state in
+the repo (`.ocarina/place_discovered.json`), seeded once from the
+journal for lines that predate the ledger.
+
 **Clarification pass, 2026-08-01 (post-first-light):** six points where
 this file was silent and the built server had to choose were reviewed
 and ratified — AJ delegating the ruling to the mind as this surface's

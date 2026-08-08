@@ -212,9 +212,12 @@ RESOURCES = [
      "description": "The quest pause subscreen (songs learned live here).",
      "mimeType": "application/json"},
     {"uri": "oot://place", "name": "place",
-     "description": "The place sense (docs/25): this scene's region graph as "
-                    "judgments over stable names — regions, climb columns, "
-                    "unverified candidates, where you are. Route planning is "
+     "description": "The place sense (docs/25; discovery grain docs/34): "
+                    "this scene's region graph as judgments over stable "
+                    "names — regions, climb columns, unverified candidates, "
+                    "where you are. Overworld scenes reveal whole at entry; "
+                    "dungeons present only what presence has earned, with "
+                    "frontier legs 'destination unknown'. Route planning is "
                     "yours; bodies traverse one named edge at a time.",
      "mimeType": "application/json"},
     {"uri": "oot://machine", "name": "machine",

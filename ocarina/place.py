@@ -103,6 +103,15 @@ SCENE_DIRS = {
     0x5B: "spot10",       # Lost Woods
 }
 
+#: Scenes whose maps are FOGGED (docs/34, the discovery grain — the
+#: game's own photographed predicate: overworld minimaps reveal whole
+#: at entry; dungeon pause maps reveal per visited room and fog the
+#: floor enumeration itself). Overworld scenes and interiors (the game
+#: shows no minimap indoors at all — judgment call recorded in docs/34)
+#: reveal fully at entry; scenes listed here present only what presence
+#: has earned.
+DUNGEON_SCENES = {0x00, 0x11}     # ydan, ydan_boss
+
 #: Judged-unit anchors. CHILD_LINK_HEIGHT is the eye-unit ("about twice
 #: your height"); RUN_UNITS_PER_S calibrated on the fifth flight's ring
 #: arc (1,816 units walked in 5-7 s). Judgments are presented truth;
@@ -538,6 +547,11 @@ class PlaceSense:
                                          # — the last ON-MESH fix
         self._prev_region_narrated = None
         self._leg = None                 # declared traverse leg (edge name)
+        #: The discovery ledger (docs/34, 0.14.0) — attached by the
+        #: runtime (it owns the save-file repo). None = fog OFF (the
+        #: pre-0.14.0 whole-scene reveal), which is what standalone and
+        #: test construction get unless they attach one.
+        self.discovery = None
 
     # -- diagnostics (drained into the journal by the runtime) --------------
 
@@ -683,6 +697,20 @@ class PlaceSense:
                 return []
             region, floor_y = hit
             rid, full = region["id"], graph.region_name(region)
+            # Presence is discovery (docs/34, 0.14.0): a standing fix in
+            # a fogged scene earns the region for this save line, once,
+            # with its own cue — the journal's exploration record. The
+            # wire's `room` rides along as an observed binding for the
+            # future room-grain reveal. Overworld scenes reveal whole at
+            # entry, so nothing to earn there; slivers are plumbing, not
+            # places.
+            if (self.discovery is not None and scene in DUNGEON_SCENES
+                    and not region.get("sliver")
+                    and self.discovery.discover(scene, full,
+                                                state.get("room"))):
+                events.append({"event": "place", "cue": "region_discovered",
+                               "region": full,
+                               "desc": "first time here, this save line"})
             if (not region.get("sliver")
                     and full != self._prev_region_narrated):
                 self._prev_region_narrated = full
@@ -741,11 +769,25 @@ class PlaceSense:
         arid = ahit[0]["id"]
         if arid == rid:
             return "walkable"
+        # Fog coherence (docs/34): the rider may only reference
+        # discovered ground — toward undiscovered space the judgment is
+        # honest about the mind's OWN map, not the world's.
+        if self._fogged(state.get("scene", -1),
+                        graph.region_name(ahit[0])):
+            return "somewhere you haven't been"
         for leg in graph.legs_from(rid):
             if leg["to"] == arid:
                 return ("up a climb" if leg["direction"] == "up"
                         else "down a drop")
         return "across a gap"
+
+    def _fogged(self, scene: int, region_name: str) -> bool:
+        """True when `region_name` may not be NAMED to the mind
+        (docs/34): a fogged scene, a ledger attached, no presence
+        earned. Overworld scenes and ledger-less construction (tests,
+        standalone) are never fogged — the pre-0.14.0 reveal."""
+        return (self.discovery is not None and scene in DUNGEON_SCENES
+                and not self.discovery.known(scene, region_name))
 
     # -- traverse support -------------------------------------------------------
 
@@ -830,12 +872,25 @@ class PlaceSense:
         if target_region["id"] != rid:
             legs = graph.legs_from(rid)
             known = sorted({graph.edge_name(l["edge"]) for l in legs})
+            ways = ", ".join(known) if known else "no linked edges"
+            # Fog coherence (docs/34, ratified with docs/30 as one
+            # story): an UNDISCOVERED region is never named — the
+            # refusal stays instant and zero-movement, but degrades to
+            # "somewhere you haven't been". Edge names stay: the wall
+            # is visible from where Link stands; its far side is not.
+            if self._fogged((state or {}).get("scene", -1),
+                            graph.region_name(target_region)):
+                raise RouteRefused(
+                    f"target is somewhere you haven't been — not "
+                    f"walk-reachable from here: regions are separate "
+                    f"walkable components by construction. The ways out "
+                    f"from here: {ways} (traversing a leg is how space "
+                    f"is earned — the frontier is in oot://place)")
             raise RouteRefused(
                 f"target is in {graph.region_name(target_region)}, not "
                 f"{graph.region_name(region)} — not walk-reachable: "
                 f"regions are separate walkable components by "
-                f"construction. The ways out from here: "
-                f"{', '.join(known) if known else 'no linked edges'} "
+                f"construction. The ways out from here: {ways} "
                 f"(cross-region routing is yours, over oot://place)")
         waypoints = graph.route_in_region(rid, pos, (tx, tz),
                                           blocked=blocked)
@@ -987,26 +1042,69 @@ class PlaceSense:
         you_y = you.get("y")
         here = you.get("region")
 
+        # The discovery grain (docs/34, 0.14.0): overworld scenes and
+        # interiors reveal whole at entry (the game's own photographed
+        # minimap predicate); DUNGEON_SCENES present only what presence
+        # has earned, with legs into undiscovered space as typed
+        # frontiers — "destination unknown". Self is never fogged.
+        fogged_scene = (self.discovery is not None
+                        and scene in DUNGEON_SCENES)
+        items = (state or {}).get("dungeon_items") or {}
+        has_map = bool(items.get("map"))
+
+        def revealed(name: str) -> bool:
+            return (not fogged_scene or name == here
+                    or self.discovery.known(scene, name))
+
         regions = []
+        outlined = 0
         for r in sorted(graph.regions.values(), key=lambda r: r["y_min"]):
             if r.get("sliver"):
                 continue
             name = graph.region_name(r)
+            if not revealed(name):
+                # The Dungeon Map widens to OUTLINE grade only (docs/34
+                # open call 3, ratified: the paper map shows shapes,
+                # not vines) — existence and rough placement; ways and
+                # detail stay presence-gated.
+                if has_map:
+                    entry = {"region": name, "size": judge_size(r["area"]),
+                             "outline": "from the Dungeon Map — never "
+                                        "stood in; ways and detail are "
+                                        "presence-gated"}
+                    if you_y is not None:
+                        entry["elevation"] = judge_elevation(r["y_min"] - you_y)
+                    regions.append(entry)
+                    outlined += 1
+                continue
             ways = []
             for leg in graph.legs_from(r["id"]):
                 e = leg["edge"]
                 to = graph.regions[leg["to"]]
-                if e["kind"] == "crawl":
+                to_name = graph.region_name(to)
+                updown = "up" if leg["direction"] == "up" else "down"
+                if not revealed(to_name):
+                    # The frontier: the wall is visible from here (kind,
+                    # height, its geometric name for traverse); its far
+                    # side is not. Traversing it IS exploration.
+                    if e["kind"] == "crawl":
+                        ways.append(f"crawl through — destination unknown "
+                                    f"({graph.edge_name(e)})")
+                    else:
+                        ways.append(
+                            f"{e['kind']} {updown} — destination unknown — "
+                            f"{judge_height(e['y_hi'] - e['y_lo'])} of "
+                            f"climb ({graph.edge_name(e)})")
+                elif e["kind"] == "crawl":
                     # A crawl is horizontal — "up/down" would be the
                     # linker's bookkeeping leaking into narration.
                     # (Linked since 0.13.0's end-clustering fix; still
                     # an honest not-yet to traverse.)
-                    ways.append(f"crawl through to {graph.region_name(to)} "
+                    ways.append(f"crawl through to {to_name} "
                                 f"({graph.edge_name(e)})")
                 else:
                     ways.append(
-                        f"{e['kind']} {'up' if leg['direction'] == 'up' else 'down'} "
-                        f"to {graph.region_name(to)} — "
+                        f"{e['kind']} {updown} to {to_name} — "
                         f"{judge_height(e['y_hi'] - e['y_lo'])} of climb "
                         f"({graph.edge_name(e)})")
             entry = {
@@ -1024,8 +1122,16 @@ class PlaceSense:
                 entry["you_are_here"] = True
             regions.append(entry)
 
-        unlinked = [graph.edge_name(e) for e in graph.climb_edges
-                    if not e["linked"]]
+        unlinked = []
+        for e in graph.climb_edges:
+            if e["linked"]:
+                continue
+            if fogged_scene and not any(
+                    revealed(graph.region_name(graph.regions[rid]))
+                    for rid in (list(e["from"]) + list(e["to"]))):
+                continue        # an instrument gap in undiscovered space
+                                # would name geometry presence hasn't earned
+            unlinked.append(graph.edge_name(e))
         slivers = sum(1 for r in graph.regions.values() if r.get("sliver"))
         body = {
             "scene": graph.scene,
@@ -1043,12 +1149,38 @@ class PlaceSense:
             "notes": [
                 "names are stable identifiers (geometry-derived); calling "
                 "places what you like is your job, in your knowledge files",
-                "REVEAL GRAIN honesty gap (docs/25): this document currently "
-                "shows the whole scene at entry; the blessed grain is the "
-                "game's own minimap (rooms as entered) and lands when "
-                "region->room membership exists — over-revealing, loudly",
             ],
         }
+        if fogged_scene:
+            body["notes"].append(
+                "DISCOVERY GRAIN (docs/34): this scene is fogged — regions "
+                "appear as you stand in them, frontier legs read "
+                "'destination unknown', and traversing one is how space "
+                "is earned; discovery persists with this save line")
+            body["notes"].append(
+                "RETARGETED honesty gap (docs/25 -> docs/34): the game "
+                "reveals whole ROOMS on entry; scene collision carries no "
+                "room table, so this document under-reveals at region "
+                "grain until the game's own room tables are read — "
+                "conservative, never X-ray")
+            if not items:
+                body["notes"].append(
+                    "Dungeon Map/Compass widening awaits the instrument: "
+                    "no dungeon_items on the wire yet")
+            elif has_map:
+                body["notes"].append(
+                    f"{outlined} region(s) at outline grade from the "
+                    f"Dungeon Map")
+            if items.get("compass"):
+                body["notes"].append(
+                    "Compass markers are deferred: the census carries only "
+                    "the loaded room's actors, so cross-room chest markers "
+                    "await a wire rider")
+        else:
+            body["notes"].append(
+                "this scene reveals whole at entry — the game's own "
+                "overworld-minimap predicate (docs/34, photographed "
+                "2026-08-07)")
         if slivers:
             body["notes"].append(f"{slivers} sliver region(s) hidden "
                                  f"(connectivity plumbing, not places)")

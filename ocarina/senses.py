@@ -378,7 +378,11 @@ SCHEMA = {
                                 # under it, from where you stand
                                 # (docs/30 rider, ratified; sight-gated
                                 # by inheritance; ABSENT when the place
-                                # sense can't vouch)
+                                # sense can't vouch). Under the
+                                # discovery grain (docs/34, 0.14.0) an
+                                # enemy over undiscovered ground reads
+                                # "somewhere you haven't been" — the
+                                # rider inherits the fog
     },
     "place": {                  # the place sense (docs/25; absent entity
                                 # when no map / no --o2r / pre-play)

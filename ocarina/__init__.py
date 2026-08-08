@@ -284,7 +284,38 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: family: the cliff refused cold with zero movement measured in-body,
 #: reachable agreeing with the walk, and a routed walk arriving
 #: map-verified.
-OCARINA_VERSION = "0.13.0"
+#: 0.14.0: THE DISCOVERY GRAIN (dojo docs/34, ratified by AJ
+#: 2026-08-07 with all five open calls as recommended, together with
+#: docs/30 as one story; built the same night). Knowledge in the head
+#: is fair; geometry in the hand must be earned. `oot://place` now
+#: implements its own blessed reveal grain: overworld scenes and
+#: interiors reveal whole at entry (the game's own photographed
+#: minimap predicate); DUNGEON_SCENES present only regions presence
+#: has earned — unvisited regions ABSENT (not greyed), legs into
+#: undiscovered space typed frontiers with "destination unknown" (edge
+#: names kept — the wall is visible and traverse explores by name),
+#: and first presence journals the new `region_discovered` place cue,
+#: once per save line. Discovery is SAVE-LINE state
+#: (ocarina/discovery.py -> .ocarina/place_discovered.json, the
+#: SeenKinds pattern), seeded once from the journal for lines that
+#: predate the ledger (open call 5: the fossil proves the presence),
+#: re-presented on re-entry, never re-fogged. Fog coherence with the
+#: routed walk: the cross-region refusal and the reach rider degrade
+#: to "somewhere you haven't been" for undiscovered regions — still
+#: instant, still zero movement; self is never fogged. The docs/25
+#: honesty flag comes OFF for overworld and is RETARGETED for
+#: dungeons: the game reveals whole ROOMS on entry, scene collision
+#: carries no room table, so v1 reveals at region grain by presence —
+#: under-revealing, never X-ray (the wire's `room` field is recorded
+#: as an observed region->room binding for the day the game's own
+#: room tables are read). Dungeon Map widening is implemented at
+#: outline grade behind a `dungeon_items` wire field the instrument
+#: does not carry yet (loud note until the rider lands); Compass
+#: markers deferred (the census sees only the loaded room). tests/live
+#: grows the discovery family (fresh entry fogged; warp-out/warp-back
+#: re-presents, criterion 5) — UNRUN with the walk family, same
+#: reason: SoH was down.
+OCARINA_VERSION = "0.14.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

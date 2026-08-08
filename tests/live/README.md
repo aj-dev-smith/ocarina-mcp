@@ -83,6 +83,12 @@ gates says anything about the code under test.
   map-verified. Warps land at ENTRANCES (the third router lesson:
   entrance spawns are in-bounds by construction). UNRUN as written —
   built 2026-08-07 with SoH down; run it before the maze flight.
+- `test_discovery_live.py` — the discovery-grain family (0.14.0,
+  docs/34, criteria 1 and 5 as pins): a dark repo warped into the Deku
+  Tree presents presence only (a handful of regions, DISCOVERY GRAIN
+  note, `region_discovered` in the journal), and warp-out/warp-back
+  re-presents the earned map from the repo without re-awarding
+  discovery. UNRUN with the walk family — same night, same reason.
 
 ## The pattern to keep: warp-there-and-pin
 

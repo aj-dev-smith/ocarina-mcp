@@ -61,6 +61,31 @@ inheritance: they annotate the slot the sight predicate already
 filled). No new tool, no new resource, no new event category;
 `oot://place` and its reveal grain are deliberately untouched.
 
+**Amended 2026-08-07 (ocarina 0.14.0): THE DISCOVERY GRAIN** — dojo
+docs/34, ratified by AJ the same night together with docs/30, all five
+open calls as recommended (AJ's commissioning line is the evidence
+base: "not fair that you'd literally precompute the whole path there
+without even leaving the treehouse"; the two pause-map screenshots are
+the photographed predicate). Knowledge in the head is fair; geometry
+in the hand must be earned. `oot://place` now implements its own
+blessed reveal grain: overworld scenes and interiors reveal WHOLE at
+entry (the game's own minimap does); DUNGEON scenes present only
+regions presence has earned — unvisited regions are ABSENT, legs into
+undiscovered space are typed frontiers with no destination name, and
+traversing one IS exploration (`region_discovered`, a new `place`
+cue). Discovery is SAVE-LINE state, persisted in the repo
+(`.ocarina/place_discovered.json`; existing lines seed from their
+journals — the fossil proves the presence). Refusals and the `reach`
+rider inherit the fog: an undiscovered region is never named,
+degrading to "somewhere you haven't been" — still instant, still zero
+movement. Self is never fogged. The docs/25 honesty flag comes OFF
+for overworld and is RETARGETED for dungeons: the game reveals whole
+ROOMS on entry, scene collision carries no room table, so v1
+under-reveals at region grain — conservative, never X-ray. Dungeon
+Map widening (outline grade only) is implemented behind a
+`dungeon_items` wire field the instrument does not carry yet — a
+loud note until that rider lands.
+
 ## The goal (AJ, verbatim in spirit)
 
 1. Enable inputs via the behavior machine.
@@ -197,17 +222,24 @@ Senses (active):
 - `oot://dialogue` — current/recent text verbatim, choices as data.
 - `oot://menu/items|equipment|map|quest` — the pause subscreens as
   documents (songs learned live in quest).
-- `oot://place` — the place sense (docs/25): this scene's region graph
-  as judgments over stable names — regions with judged sizes and
-  elevations, typed climb edges with judged heights, drop/jump
-  candidates honestly marked unverified, `you_are_here`. No raw
-  coordinates (names carry quantized centroids as IDENTITY, by the
-  blessed scheme). Reveal grain: the blessed grain is the game's own
-  minimap (dungeon rooms as entered; Map/Compass shelved with the
-  principle recorded — the items simulate the human player's benefit,
-  never the full lab-grade graph); v0 reveals whole-scene at entry, a
-  documented honesty gap flagged in the document itself until
-  region→room membership exists.
+- `oot://place` — the place sense (docs/25; discovery grain docs/34,
+  implemented 0.14.0): this scene's region graph as judgments over
+  stable names — regions with judged sizes and elevations, typed climb
+  edges with judged heights, drop/jump candidates honestly marked
+  unverified, `you_are_here`. No raw coordinates (names carry
+  quantized centroids as IDENTITY, by the blessed scheme). Reveal
+  grain, now implemented as blessed: overworld scenes and interiors
+  reveal whole at entry (the game's own photographed minimap
+  predicate); dungeon scenes present only what presence has earned —
+  unvisited regions ABSENT, frontier legs "destination unknown" (edge
+  names kept: the wall is visible, and traverse explores by name),
+  discovery persisted per save line and never re-fogged. The Dungeon
+  Map widens to outline grade only (the paper map shows shapes, not
+  vines); Compass markers deferred until the census sees beyond the
+  loaded room. Retargeted honesty gap, flagged in the document: the
+  game reveals whole ROOMS on entry and scene collision carries no
+  room table, so dungeon reveal is at region grain — under-revealing,
+  never X-ray.
 - `oot://machine` — declared vs LIVE machine, as two columns (the
   conjunction discipline: "repo says armed" ≠ "server confirms armed").
 - `oot://journal/mechanical` — the persisted event timeline.

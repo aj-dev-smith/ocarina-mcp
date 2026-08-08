@@ -178,7 +178,27 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play (server at 0.13.0; the routed walk BUILT, live pins pending)
+## State of play (server at 0.14.0; routed walk + discovery grain BUILT, live pins pending)
+
+- **0.14.0 — THE DISCOVERY GRAIN (built 2026-08-07, late the same
+  night, right after 0.13.0 — dojo docs/34's ratified slate,
+  complete).** Knowledge in the head is fair; geometry in the hand
+  must be earned. `oot://place` now implements its blessed reveal
+  grain: overworld/interiors whole at entry; DUNGEON_SCENES (ydan,
+  ydan_boss) presence-gated — unvisited regions ABSENT, frontier legs
+  "destination unknown" (edge names kept; traversing one IS
+  exploration), `region_discovered` cue once per save line, discovery
+  persisted per line (`ocarina/discovery.py` →
+  `.ocarina/place_discovered.json`) and SEEDED from existing journals.
+  Refusals + the reach rider inherit the fog ("somewhere you haven't
+  been"); self never fogged. Honest gaps, loud in the document: room
+  grain (no room table in scene collision — v1 fogs at REGION grain,
+  under-revealing; region→room bindings observed off the wire's `room`
+  field) and `dungeon_items` (Map widening built, waiting on the wire
+  rider — backlog). Tests 421 → 437; live family
+  (`tests/live/test_discovery_live.py`, criteria 1+5) UNRUN with the
+  walk family. **The maze acceptance flight now covers docs/30 AND
+  docs/34.**
 
 - **0.13.0 — ROUTE-AWARE WALKING (built 2026-08-07, late the same
   night, in an autonomous session while AJ was mobile — dojo docs/30's
@@ -208,9 +228,10 @@ silently-never-fires transition shape, twice).
   **`tests/live/test_walk_live.py` is UNRUN** (SoH was down): a walk
   probe behavior carries walk_to/reachable results out via
   walk_result.json with zero-movement + elapsed measured in-body.
-  **Next session: run the live walk family (needs the game up + a file
-  loaded), then docs/34 (0.14.0), then the maze acceptance flight,
-  flag off, criteria 1–8.**
+  **Next session: run BOTH live families (needs the game up + a file
+  loaded — file-select needs AJ's hands), then the maze acceptance
+  flight, flag off — docs/30 criteria 1–8 and docs/34's in one
+  mission.**
 
 - **THE NAV PROGRAM (2026-08-07 — FULLY RATIFIED, all three docs,
   all open calls as recommended: AJ, late that night, "ok both fully
@@ -219,13 +240,11 @@ silently-never-fires transition shape, twice).
   table, the boulder maze) produced a three-doc program, built in
   order: **docs/33** the dev harness (0.12.0 — BUILT and
   LIVE-VERIFIED the same night, see below); **docs/30** route-aware
-  walking (0.13.0 — BUILT the same night, see the entry above; live
-  pins pending; the training-area maze is the acceptance mission);
-  **docs/34** the discovery grain (0.14.0: fog of war mirroring the
-  game's own photographed predicate — overworld full-at-entry,
-  dungeons room+floor presence-gated, Map/Compass widen, frontier
-  legs "destination unknown", refusals never name undiscovered
-  regions, discovery persisted per save line). AJ's fairness line,
+  walking (0.13.0 — BUILT the same night, see above; live pins
+  pending; the training-area maze is the acceptance mission);
+  **docs/34** the discovery grain (0.14.0 — BUILT the same night, see
+  above; the whole three-doc program landed within a day of its
+  ratification). AJ's fairness line,
   now doctrine: knowledge in the head is fair; geometry in the hand
   must be earned. In flight same night: **0.12.1** — the wire grows
   a `loads` play-state-init counter + current `room` on the state

@@ -38,8 +38,10 @@ from typing import Callable, Optional
 
 from . import identity as identity_mod
 from . import overlay, senses
+from .discovery import Discovery
 from .events import EventLog
 from .executor import BehaviorExecutor
+from .place import SCENE_DIRS
 from .game import Game
 from .guards import eval_guard
 from .link import LinkError
@@ -115,6 +117,25 @@ class MachineRuntime:
         self.place = place
         if place is not None:
             game.place = place
+        # The discovery ledger (docs/34, 0.14.0): save-line state like
+        # SeenKinds, attached to the place sense so the fold, the
+        # document, and the refusal fog all read ONE record. A repo
+        # with no ledger but a journal full of region_entered fossils
+        # is seeded from the journal (open call 5, ratified: the
+        # fossil proves the presence; starting dark would fog regions
+        # the line has bled for).
+        self.discovery = Discovery(
+            self.repo / ".ocarina" / "place_discovered.json",
+            journal=self.repo / "journal" / "mechanical.jsonl",
+            scene_dirs=SCENE_DIRS)
+        if place is not None:
+            place.discovery = self.discovery
+            if self.discovery.seeded_from_journal:
+                place._diag(None,
+                            f"discovery seeded from the journal: "
+                            f"{self.discovery.seeded_from_journal} "
+                            f"region(s) this line had already stood in "
+                            f"(docs/34 open call 5)")
 
         self.machine: Optional[Machine] = None
         self.diagnostics: list = []
