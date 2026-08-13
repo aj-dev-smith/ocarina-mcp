@@ -180,6 +180,31 @@ silently-never-fires transition shape, twice).
 
 ## State of play (server at 0.14.2; the nav program BUILT, LIVE-VERIFIED, and ACCEPTANCE-FLOWN — the eleventh flight ran the maze)
 
+- **SLINGSHOT SCHOOL (2026-08-12 evening, dojo docs/36 — no version
+  bump; server ran stock 0.14.2).** An eyewitness session with AJ:
+  save-across-quit VERIFIED end to end (identity check passed cold
+  five days after the maze flight's save; wire vs AJ's eyes vs
+  docs/35, every surviving claim matched), then the bench's **first
+  slingshot kills** (Z-locked; ammo ledger exact, 14 seeds spent and
+  accounted) and the **manual-aim probe** (manual_shot v1→v10 in
+  `../ocarina-flights/09-kokiri/kokiri/machine/behaviors/demo.py`,
+  post-mortems in-file): `camera_yaw` IS the live aim-yaw sense
+  (closed loop to ~0.1°; `facing` freezes in aim mode), the draw is
+  a sustained C-hold with release-as-trigger, first person PERSISTS
+  after firing (exit hygiene on the body), aim pitch is NOT on the
+  wire (+y aims DOWN — AJ eyewitness), and a dormant baba's "small
+  mode" is armor whose kill window the census already carries (head
+  pos[1] flat 14–14 at 252 out, rose +32 at 141 — backlog #3's
+  activation-distance evidence, measured live). TWO harness items
+  filed in harness-backlog: **timeout_s never preempts a busy body**
+  (a 90 s body ran 4+ min — real bug) and the **`player.aim` rider**
+  (mode/yaw/pitch; fairness-clean self-knowledge). AJ's standing
+  commission for next session: **GOHMA** ("I wanna watch you beat
+  ghoma") — tree mouth → 3F (shoot_guard_v1's moment) → web dive →
+  B1 sticks/fire → 2-3-1 scrubs → the fight. File C still holds the
+  village-floor save (SoH closed before an in-dungeon save; seeds
+  restored to 30 on next boot).
+
 - **THE ELEVENTH FLIGHT — THE MAZE (2026-08-07 late night, dojo
   docs/35: the docs/30 + docs/34 acceptance mission, FLOWN).** Flag
   off, file C (AJ hand-picked; identity verified in 1 s — the machine
