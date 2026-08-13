@@ -178,7 +178,33 @@ silently-never-fires transition shape, twice).
   `server.py` (stdio MCP + channel push).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play (server at 0.14.2; the nav program BUILT and LIVE-VERIFIED, docs/34 criterion 4 closed live — the maze acceptance flight is next)
+## State of play (server at 0.14.2; the nav program BUILT, LIVE-VERIFIED, and ACCEPTANCE-FLOWN — the eleventh flight ran the maze)
+
+- **THE ELEVENTH FLIGHT — THE MAZE (2026-08-07 late night, dojo
+  docs/35: the docs/30 + docs/34 acceptance mission, FLOWN).** Flag
+  off, file C (AJ hand-picked; identity verified in 1 s — the machine
+  was parked so the slot-0 masher couldn't repeat the blind boot),
+  AJ watching, nine blocking-wake acts of living, eight mid-flight
+  hot-swaps. Deku Tree atrium → out the mouth (3.6 s) → the trail by
+  reachable()-elected hops (v1's straight-line hops post-mortemed
+  in-file) → village → the ninth flight's crawl bodies → the training
+  area. docs/30 criteria: 1 ✓ (refused in 1 ms, 0.00 units moved,
+  regions + all three legs out named, journal-verbatim), 2 ✓ + 7 ✓
+  (maze_run.json: corridor polyline vs wall-crossing chord; routed
+  legs held 18–49 units of wall at full speed), 3 ✓ (collector with
+  NO blacklist, reachable() election, rupees 9→14), 4 ✓ (bush refused
+  by name before contact, screenshot witness), 8 ✓✓ (the journaled
+  gate + a mid-run hold + the counterexample priced: all three
+  0.25-heart scratches were gate-skipped movements), 6 ✓ with audit
+  notes, 5 PARTIAL (two candidates journaled as instrument
+  diagnostics, neither confirmed — still open). docs/34 rode along
+  (fogged ydan at boot; earned regions re-presented). Instrument
+  findings filed in docs/35: census is loaded-room-only (met in the
+  field), prop radii want wire collider sizes, seam-flap hysteresis,
+  crawl entry wants the centerline (the place doc's own edge name
+  carries it). Closed with a game-native save. Remaining from the
+  program: criterion 5's confirmed false refusal, and docs/34
+  criterion 6's fresh-start example (needs a fresh file, not C).
 
 - **0.14.2 — THE DUNGEON-ITEMS RIDER (2026-08-07, later the same
   night, autonomous — docs/34 criterion 4 closed and LIVE-VERIFIED).**
