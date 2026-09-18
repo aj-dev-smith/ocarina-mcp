@@ -273,9 +273,12 @@ class JevClient:
     # -- the verb -------------------------------------------------------------
 
     def ask(self, state, questions: dict, timeout_s: Optional[float] = None,
-            tag: str = "") -> Judgment:
+            tag: str = "", journal_state: bool = False) -> Judgment:
         """One request, all `questions` over one `state`. Never raises on
-        the service's account; a failed call is `Judgment(ok=False)`."""
+        the service's account; a failed call is `Judgment(ok=False)`.
+        `journal_state=True` puts the state text (first 600 chars) in the
+        journal block — a LAB switch for reading what the judge read;
+        the first field duel (2026-09-18) was undiagnosable without it."""
         cap = self.timeout_s if timeout_s is None else float(timeout_s)
         payload = {"state": state, "model": self.model, "questions": questions}
         body = json.dumps(payload, default=str).encode("utf-8")
@@ -312,7 +315,8 @@ class JevClient:
                 j = self._fail(f"{type(e).__name__}: {e}", (time.perf_counter() - t0) * 1000.0,
                                shash, seq)
             self.latencies.append(j.latency_ms)
-        self._journal(j, questions, tag)
+        self._journal(j, questions, tag,
+                      state if journal_state else None)
         return j
 
     def _fail(self, error: str, ms: float, shash: str, seq: int) -> Judgment:
@@ -320,7 +324,8 @@ class JevClient:
         self.last_error = error
         return Judgment(ok=False, error=error, latency_ms=ms, state_hash=shash, seq=seq)
 
-    def _journal(self, j: Judgment, questions: dict, tag: str) -> None:
+    def _journal(self, j: Judgment, questions: dict, tag: str,
+                 state=None) -> None:
         if not self.journal or self.log is None:
             return
         block = {"seq": j.seq, "ok": j.ok, "latency_ms": round(j.latency_ms, 1),
@@ -328,6 +333,9 @@ class JevClient:
                  "model": j.model}
         if tag:
             block["tag"] = tag
+        if state is not None:
+            text = state if isinstance(state, str) else json.dumps(state, default=str)
+            block["state"] = text[:600]
         if j.ok:
             block["answers"] = j.compact()
             block["usage"] = j.usage
@@ -376,11 +384,13 @@ class Judge:
     """
 
     def __init__(self, client: JevClient, questions: Optional[dict] = None,
-                 tag: str = "", timeout_s: Optional[float] = None):
+                 tag: str = "", timeout_s: Optional[float] = None,
+                 journal_state: bool = False):
         self.client = client
         self.questions = questions or {}
         self.tag = tag
         self.timeout_s = timeout_s
+        self.journal_state = journal_state
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._next: Optional[tuple] = None
@@ -447,7 +457,8 @@ class Judge:
                 self._in_flight = True
             state, questions = job
             try:
-                j = self.client.ask(state, questions, timeout_s=self.timeout_s, tag=self.tag)
+                j = self.client.ask(state, questions, timeout_s=self.timeout_s,
+                                    tag=self.tag, journal_state=self.journal_state)
             except Exception as e:      # ask() never raises; belt and braces
                 j = Judgment(ok=False, error=f"{type(e).__name__}: {e}")
             with self._lock:
@@ -480,8 +491,10 @@ class JevSense:
         return self.client.ask(state, questions, timeout_s=timeout_s, tag=tag)
 
     def judge(self, questions: Optional[dict] = None, tag: str = "",
-              timeout_s: Optional[float] = None) -> Judge:
-        return Judge(self.client, questions, tag=tag, timeout_s=timeout_s)
+              timeout_s: Optional[float] = None,
+              journal_state: bool = False) -> Judge:
+        return Judge(self.client, questions, tag=tag, timeout_s=timeout_s,
+                     journal_state=journal_state)
 
     def stats(self) -> dict:
         return self.client.stats()

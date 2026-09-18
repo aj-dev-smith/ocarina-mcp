@@ -135,6 +135,17 @@ class TestClient(unittest.TestCase):
         self.assertIn("FAILED", ev["text"])
         self.assertIn("http 529", ev["judgment"]["error"])
 
+    def test_journal_state_is_a_lab_switch(self):
+        log = EventLog()
+        c = jev.JevClient("k", transport=FakeTransport(), log=log)
+        c.ask("Link has 1 heart. " * 100, QUESTIONS, tag="t", journal_state=True)
+        ev = log.tail(1)[-1]
+        self.assertIn("state", ev["judgment"])
+        self.assertLessEqual(len(ev["judgment"]["state"]), 600)
+        judge = jev.Judge(c, QUESTIONS, tag="t", journal_state=True)
+        judge.submit({"hearts": 1}); judge.wait_for(0); judge.close()
+        self.assertEqual(log.tail(1)[-1]["judgment"]["state"], '{"hearts": 1}')
+
     def test_stats(self):
         c = jev.JevClient("k", transport=FakeTransport())
         for _ in range(3):

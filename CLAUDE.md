@@ -86,7 +86,7 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (463; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (464; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame, and
   real-o2r place-sense pins that skip if oot.o2r is absent).
 - Run: `python3 -m ocarina --repo <save-file-repo> --o2r
@@ -180,7 +180,7 @@ silently-never-fires transition shape, twice).
   journaling — 0.15.0, dojo docs/37).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play (server at 0.15.0; Jev on the bench — the System One duelist is BUILT and UNFLOWN)
+## State of play (server at 0.15.0; Jev on the bench — the System One duelist FLEW: room 0 cleared by judgment)
 
 - **0.15.0 — SYSTEM ONE (2026-09-18, dojo docs/37 — AJ's "are you
   thinkin what I'm thinkin": built, offline-verified, live against the
@@ -221,9 +221,23 @@ silently-never-fires transition shape, twice).
   are lab-grade until AJ rules. AJ also ratified the second layer in
   principle ("using Jev to transition states ... a no-brainer"):
   `when` guards and wake defaults reading a judgment is the next
-  design pass, AFTER the duel flies. **Next session opens with the
-  duel: room 0, force_state jev_duel, watch judged/defaulted and the
-  bite count vs v4's 11/20.** Gohma stays commissioned behind it.
+  design pass. **FLOWN the same night (23:50 → 00:04, AJ watching,
+  docs/37 "The flight"):** treehouse → mouth (82 s) → room 0 by the
+  machine's own chain, then FOUR duel runs and four hot-swaps —
+  v1 kill #1 in 4 s (then 16 s cutting air: the narration described
+  the digest's slot, not the target; and the ported kill predicate
+  reads `dojo_event` where ocarina feeds `agent_event`), v1-fixed kill
+  #2 in 9 s (then chained into #3; three scratches, every one a cut
+  judged on a low head applied after the rear — the round trip IS the
+  reflex gap), v3 no kill (the any-change freshness veto threw away
+  167/276 answers), **v4 kill #3 in 9.6 s, zero damage, ended on the
+  kill. Room 0 cleared by judgment.** 240 calls, 237 ok, median
+  275 ms, model jev-1.13.0 on every journal line. Jev was never wrong
+  on a correct state; all four versions fixed state and composition
+  body-side. `judge(journal_state=True)` (lab switch) landed
+  mid-flight. **Next: the machine-layer design doc (judged guards and
+  wake defaults), and a runtime oddity filed in docs/37 (a phantom
+  `resume after wake` re-running a body).** Gohma stays commissioned.
 
 
 - **SLINGSHOT SCHOOL (2026-08-12 evening, dojo docs/36 — no version
