@@ -235,9 +235,27 @@ silently-never-fires transition shape, twice).
   275 ms, model jev-1.13.0 on every journal line. Jev was never wrong
   on a correct state; all four versions fixed state and composition
   body-side. `judge(journal_state=True)` (lab switch) landed
-  mid-flight. **Next: the machine-layer design doc (judged guards and
-  wake defaults), and a runtime oddity filed in docs/37 (a phantom
-  `resume after wake` re-running a body).** Gohma stays commissioned.
+  mid-flight. **AJ's ruling at wrap-up (2026-09-19): "the state
+  machine navigator is where Jev shines" — the MACHINE layer (judged
+  `when` guards, judged wake defaults, escalation triage) is the
+  priority; the in-node reflex is the back-pocket weapon, proven and
+  parked. NEXT SESSION OPENS WITH the docs-lineage design doc for
+  the machine layer (docs/38): the guard grammar reading a judgment,
+  the wake default as a `choice` over the pack at freeze time
+  (hold/retreat/fight — death #2's static HOLD), "worth waking the
+  mind?" as a `noul` over the interval digest, a first-class
+  `judgment` event, and the contract amendments (game.jev /
+  game.digest_of / status.jev / --no-jev) in one ratification pass.
+  Then build it.** Also filed: the phantom `resume after wake`
+  (harness-backlog). Gohma stays commissioned behind it.
+  **Operating gotchas from the flight:** the registered MCP server is
+  a Claude Code child process — server-side code changes (jev.py,
+  runtime.py) need AJ's `/mcp` reconnect, only behaviors and
+  machine.yaml hot-swap via reload_machine; the key is `JEV_API` in
+  `~/Code/ocarina/.env` (gitignored, `KEY: value` form); the kokiri
+  machine's enter_deku → seek_baba chain now ends in `jev_duel`
+  (kill_baba/deku_baba_v4 kept as the baseline node); file C was
+  saved inside ydan after room 0 (loads at the dungeon entrance).
 
 
 - **SLINGSHOT SCHOOL (2026-08-12 evening, dojo docs/36 — no version
