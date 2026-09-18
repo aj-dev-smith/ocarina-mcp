@@ -1019,3 +1019,104 @@ def interval_lines(interval: dict) -> list:
     for ev in interval.get("firsts") or []:
         lines.append("  first: " + json.dumps(ev))
     return lines
+
+
+# -- narration (the digest as sentences) -------------------------------------
+
+def _bearing_word(clock) -> str:
+    try:
+        c = int(clock)
+    except (TypeError, ValueError):
+        return "somewhere"
+    if c == 12:
+        return "straight ahead"
+    if c in (11, 1):
+        return f"just off ahead at {c} o'clock"
+    if c == 6:
+        return "directly behind"
+    if c in (5, 7):
+        return f"behind at {c} o'clock"
+    if c == 3:
+        return "to the right"
+    if c == 9:
+        return "to the left"
+    return f"at {c} o'clock"
+
+
+def narrate(d: dict, extra: "list[str] | None" = None) -> str:
+    """The curated digest rendered as a few plain sentences — the same
+    facts, in the narration layer's own form.
+
+    Built for Jev (jev.py, 2026-09-18) and measured before it was
+    written: over the SAME digest, nested JSON had Jev answer the
+    half-heart-with-a-baba-closing case "approach"; one sentence of
+    narration had it answer "retreat". A text-native judge reads text.
+    Templates over fields, never a new sense: every clause here is a
+    digest field or an `extra` line the BODY supplies from what it
+    legitimately holds (a baba's head height, an ammo count).
+
+    Distances are reported in game units with no interpretation — the
+    QUESTION carries the domain constants (sword reach, bite reach),
+    the state carries the facts. Absent digest entities are absent
+    sentences, not guesses.
+    """
+    parts: list = []
+    hearts, hmax = d.get("hearts"), d.get("hearts_max")
+    if hearts is not None and hmax:
+        parts.append(f"Link has {hearts:g} of {hmax:g} hearts.")
+    elif hearts is not None:
+        parts.append(f"Link has {hearts:g} hearts.")
+    player = d.get("player") or {}
+    if player.get("dead"):
+        parts.append("Link is dead.")
+    elif player.get("climbing"):
+        parts.append("Link is climbing.")
+    elif player.get("on_wall"):
+        parts.append("Link is on a wall.")
+    place = d.get("place")
+    if isinstance(place, dict):
+        if place.get("on_mesh") is False:
+            parts.append("Link is not standing on mapped ground.")
+        if place.get("region"):
+            parts.append(f"Link is in region {place['region']}"
+                         + (f", heading {place['heading']}." if place.get("heading") else "."))
+    n = d.get("enemies")
+    e = d.get("nearest_enemy")
+    if isinstance(e, dict):
+        kind = str(e.get("kind", "enemy")).replace("_", " ")
+        s = f"The nearest enemy is a {kind}, {float(e.get('dist', 0.0)):.0f} units away, " \
+            f"{_bearing_word(e.get('bearing'))}"
+        above = e.get("above")
+        if above is not None:
+            a = float(above)
+            if abs(a) < 20:
+                s += ", at Link's height"
+            elif a > 0:
+                s += f", {a:.0f} units above Link"
+            else:
+                s += f", {-a:.0f} units below Link"
+        if "moving" in e:
+            s += ", moving" if e["moving"] else ", not moving"
+        if e.get("reach"):
+            s += f"; the ground to it is {e['reach']}"
+        parts.append(s + ".")
+        if isinstance(n, int) and n > 1:
+            parts.append(f"{n} enemies are in view.")
+    elif isinstance(n, int) and n == 0:
+        parts.append("No enemy is in view.")
+    dlg = d.get("dialogue")
+    if isinstance(dlg, dict):
+        state = dlg.get("state", "other")
+        text = dlg.get("text")
+        s = f"A message box is open ({state})"
+        if text:
+            s += f': "{text}"'
+        if dlg.get("choices"):
+            s += f"; it offers the choices {dlg['choices']}, cursor on option {dlg.get('choice_index', 0)}"
+        parts.append(s + ".")
+    elif d.get("dialogue_open"):
+        parts.append("A message box is open.")
+    for line in extra or []:
+        if line:
+            parts.append(str(line).rstrip(".") + ".")
+    return " ".join(parts)

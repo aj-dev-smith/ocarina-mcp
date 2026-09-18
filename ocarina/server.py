@@ -40,7 +40,7 @@ from functools import partial
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import MACHINE_FORMAT_VERSION, OCARINA_VERSION, dev, screenshot, senses
+from . import MACHINE_FORMAT_VERSION, OCARINA_VERSION, dev, jev, screenshot, senses
 from .brainviz import Brainviz
 from .events import EventLog
 from .game import Game
@@ -1226,6 +1226,20 @@ def main(argv=None) -> int:
                              "refused outright on a repo declaring "
                              "\"scored\": true. Off (the default) = the "
                              "verbs are ABSENT")
+    parser.add_argument("--no-overlay", action="store_true",
+                        help="do not push the human debug overlay (world-space "
+                             "labels + the census-boundary HUD panel) to the "
+                             "game. For recordings. Lab-grade: the overlay is "
+                             "one-way and never feeds the sensorium, so this "
+                             "changes nothing the mind or the machine sees")
+    parser.add_argument("--no-jev", action="store_true",
+                        help="do not construct the Jev judge even if a key is "
+                             "found (JEV_API in the environment, then .env in "
+                             "the ocarina checkout, then <repo>/.env). Without "
+                             "a key Jev is OFF, loudly; bodies that ask for a "
+                             "judgment abort by name")
+    parser.add_argument("--jev-timeout", type=float, default=jev.DEFAULT_TIMEOUT_S,
+                        help="per-request wall-clock cap for Jev calls (seconds)")
     args = parser.parse_args(argv)
 
     if args.dev_tools:
@@ -1240,9 +1254,34 @@ def main(argv=None) -> int:
     link = GameLink(host=args.host, port=args.port)
     game = Game(link)
     log = EventLog(persist_path=args.repo / "journal" / "mechanical.jsonl")
+    judge = None
+    if args.no_jev:
+        log.record({"event": "diagnostic",
+                    "text": "Jev is OFF (--no-jev): game.jev is None"})
+    else:
+        key, source = jev.find_key(Path(__file__).resolve().parent.parent / ".env",
+                                   args.repo / ".env")
+        if key is None:
+            log.record({"event": "diagnostic",
+                        "text": "Jev is OFF: no JEV_API in the environment, "
+                                "the ocarina checkout's .env, or the repo's "
+                                ".env — game.jev is None"})
+        else:
+            client = jev.JevClient(key, log=log, timeout_s=args.jev_timeout)
+            judge = jev.JevSense(client)
+            log.record({"event": "diagnostic",
+                        "text": f"Jev is ON (key from {source}; model "
+                                f"{client.model}; per-call cap "
+                                f"{args.jev_timeout:g}s) — every judgment "
+                                "journals"})
     runtime = MachineRuntime(game, args.repo, log,
                              wake_deadline_s=args.wake_deadline,
-                             place=PlaceSense(args.o2r))
+                             place=PlaceSense(args.o2r), jev=judge)
+    if args.no_overlay:
+        runtime.overlay_enabled = False
+        log.record({"event": "diagnostic",
+                    "text": "debug overlay OFF (--no-overlay): no labels, no "
+                            "boundary HUD; the sensorium is unaffected"})
     dev_tools = dev.DevTools(game) if args.dev_tools else None
     core = ServerCore(game, runtime, log, dev_tools=dev_tools)
     if dev_tools is not None:

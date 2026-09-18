@@ -104,7 +104,7 @@ class MachineRuntime:
     def __init__(self, game: Game, repo: Path | str, log: EventLog,
                  wake_push: Optional[Callable[[dict], None]] = None,
                  tick_s: float = 0.05, wake_deadline_s: float = 300.0,
-                 place=None):
+                 place=None, jev=None):
         self.game = game
         self.repo = Path(repo)
         self.log = log
@@ -117,6 +117,14 @@ class MachineRuntime:
         self.place = place
         if place is not None:
             game.place = place
+        #: Jev, the System One judge (jev.JevSense) or None. Attached to
+        #: the Game the way the place sense is, so a body reaches it as
+        #: `game.jev` and aborts honestly when it is None. The body-side
+        #: digest (`game.digest_of(state)`) is the same function the
+        #: server's oot://state uses — one curation, two readers.
+        self.jev = jev
+        game.jev = jev
+        game.digest_of = self.digest_of
         # The discovery ledger (docs/34, 0.14.0): save-line state like
         # SeenKinds, attached to the place sense so the fold, the
         # document, and the refusal fog all read ONE record. A repo
@@ -370,7 +378,21 @@ class MachineRuntime:
         the overlay is a passenger, and a display glitch must not touch
         the 20 Hz loop.
         """
-        if not self.overlay_enabled or not self.game.link.connected:
+        if not self.game.link.connected:
+            self._overlay_last = None
+            self._overlay_cleared = False
+            return
+        if not self.overlay_enabled:
+            # --no-overlay: wipe whatever a previous server process left
+            # on screen, once per connection. Labels self-expire game-side
+            # 3 s after the last push; the HUD panel does not.
+            if not getattr(self, "_overlay_cleared", False):
+                try:
+                    self.game.overlay_clear()
+                    self.game.hud_clear()
+                except LinkError:
+                    return
+                self._overlay_cleared = True
             self._overlay_last = None
             return
         if self._last_state is None:
@@ -1139,6 +1161,7 @@ class MachineRuntime:
                 "heartbeat_s": self.heartbeat_s,
                 "place_sense": (self.place.status_line(self._last_state)
                                 if self.place is not None else "not constructed"),
+                "jev": self.jev.stats() if self.jev is not None else "off",
             }
 
     def place_view(self) -> dict:

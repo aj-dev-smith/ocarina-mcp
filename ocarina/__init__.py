@@ -352,7 +352,7 @@ were validated against the real game — see MACHINE.md "Provenance".
 #: presence-earned regions only: a boot line that owns the Map
 #: legitimately adds outlines, which is the ratified widening, not a
 #: reveal leak. Tests 437 -> 444.
-OCARINA_VERSION = "0.14.2"
+OCARINA_VERSION = "0.15.0"
 
 #: The machine's on-disk format version (machine.yaml `version:` key).
 MACHINE_FORMAT_VERSION = 1

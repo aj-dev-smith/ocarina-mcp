@@ -58,6 +58,13 @@ class Game:
         # The place sense (place.PlaceSense), attached by the runtime when
         # the server has an --o2r. traverse() refuses without it.
         self.place = None
+        # Jev, the System One judge (jev.JevSense), attached by the runtime
+        # when a key is found; None = judgments OFF and bodies say so.
+        self.jev = None
+        # The curated digest for a raw snapshot, attached by the runtime
+        # (it owns the sightings the digest is gated on). A body narrates
+        # what the mind would read, never a private sensorium of its own.
+        self.digest_of: Optional[callable] = None
         # Preemption plumbing for LONG composites (traverse): the executor
         # points these at its flag/reason so traverse's loops can notice a
         # preempting transition mid-op instead of after a full climb —

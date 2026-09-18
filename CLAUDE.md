@@ -86,7 +86,7 @@ silently-never-fires transition shape, twice).
 
 ## Operating this repo
 
-- Tests: `python3 -m unittest discover -s tests -t .` (322; includes a
+- Tests: `python3 -m unittest discover -s tests -t .` (463; includes a
   subprocess-over-real-pipes smoke test with the ported fakegame, and
   real-o2r place-sense pins that skip if oot.o2r is absent).
 - Run: `python3 -m ocarina --repo <save-file-repo> --o2r
@@ -175,10 +175,56 @@ silently-never-fires transition shape, twice).
   the runtime to the Shipwright `overlay` op — one-way, never feeds the
   sensorium), `runtime.py` (20 Hz loop, dispatch, edges, freeze-confirmed
   wakes), `executor.py` (+ the blessed preemption extension),
-  `server.py` (stdio MCP + channel push).
+  `server.py` (stdio MCP + channel push), `jev.py` (the System One
+  judge: keep-alive client, fire-and-hold Judge, key discovery,
+  journaling — 0.15.0, dojo docs/37).
   `protocol/link/game/miniyaml/behavior*` are ports.
 
-## State of play (server at 0.14.2; the nav program BUILT, LIVE-VERIFIED, and ACCEPTANCE-FLOWN — the eleventh flight ran the maze)
+## State of play (server at 0.15.0; Jev on the bench — the System One duelist is BUILT and UNFLOWN)
+
+- **0.15.0 — SYSTEM ONE (2026-09-18, dojo docs/37 — AJ's "are you
+  thinkin what I'm thinkin": built, offline-verified, live against the
+  service, UNFLOWN).** TypeSafe's Jev (a model that never generates
+  text: typed `choice`/`noul`/`score` answers with probabilities over
+  a posted state) is now a behavior primitive. `ocarina/jev.py`
+  (stdlib): `JevClient` on ONE keep-alive connection (measured from
+  AJ's machine: ~650 ms per call fresh, ~275 ms warm, the TLS
+  handshake alone ~370 ms — NOT the docs' 100 ms; a Jev node is a
+  3–4 Hz policy over the 20 Hz loop), `ask()` never raises for the
+  service's sake (429/timeout/bad JSON = `Judgment(ok=False)`, every
+  accessor None = code default); `Judge`, the fire-and-hold runner
+  (one in flight, newest submit supersedes, `fresh(max_age)`);
+  `find_key()` (JEV_API from env, then the checkout's `.env`, then
+  `<repo>/.env`; `.env` is now gitignored — it was not). Every call
+  journals a `diagnostic` with a compact `judgment` block (answers,
+  latency, tokens, model, state hash — never the key or the state).
+  `senses.narrate(digest, extra)` renders the digest as sentences
+  because the probe MEASURED it: the same half-heart-with-a-baba
+  facts answered "approach" as JSON and "retreat" as narration.
+  Bodies get `game.jev` (the `game.place` pattern; None = OFF,
+  loudly) and `game.digest_of(state)` (the same curation behind
+  oot://state). `status()` grows `jev`; flags `--no-jev`,
+  `--jev-timeout`. The acceptance body `jev_duel_v1`
+  (`../ocarina-flights/09-kokiri/kokiri/machine/behaviors/judged.py`,
+  node `jev_duel`, reach by force_state in room 0) keeps
+  deku_baba_v4's motor vocabulary EXACTLY and replaces its policy
+  with one `choice` over the narration; the code default is v4's
+  SAFETY half only (never cuts on a stale answer); "one heart or
+  less = leave" stayed in CODE after Jev answered back_off at half a
+  heart (TypeSafe's own rule: known rules in code). Question design
+  lessons, measured: every question carries its own domain facts
+  (question ids aren't sent; nothing is shared); a speculative noul
+  ("bitten in the next second?") sat at 0.50 where a structured
+  conjunction of visible facts read 0.97/0.04. Tests 444 → 461 (+ a
+  `JEV_LIVE=1` family, green against the real service). **Contract
+  touch PROPOSED in docs/37, not blessed** — `game.jev`/`game.digest_of`
+  are lab-grade until AJ rules. AJ also ratified the second layer in
+  principle ("using Jev to transition states ... a no-brainer"):
+  `when` guards and wake defaults reading a judgment is the next
+  design pass, AFTER the duel flies. **Next session opens with the
+  duel: room 0, force_state jev_duel, watch judged/defaulted and the
+  bite count vs v4's 11/20.** Gohma stays commissioned behind it.
+
 
 - **SLINGSHOT SCHOOL (2026-08-12 evening, dojo docs/36 — no version
   bump; server ran stock 0.14.2).** An eyewitness session with AJ:
